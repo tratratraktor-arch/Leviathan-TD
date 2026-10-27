@@ -1,0 +1,2256 @@
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leviathan TD</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rubik:wght@400;600&display=swap">
+<style>
+/* Layout: ночная «ретро-консоль» — тёмная рамка, по центру пиксельное поле, сверху статус боя, снизу ряд башен. Одна тема: игра сознательно тёмная. */
+:root {
+  color-scheme: dark;
+  --bg: #12101a;          /* ночь вокруг поля */
+  --panel: #1f1b2b;       /* панели интерфейса */
+  --panel-2: #2b2540;     /* кнопки, карточки */
+  --line: #3e3558;        /* рамки */
+  --fg: #ece6d6;          /* основной текст, тёплая кость */
+  --muted: #9a90b3;       /* подписи */
+  --soul: #7fe0d0;        /* души — бирюзовое свечение */
+  --hp: #e0525a;          /* здоровье базы */
+  --gold: #e8c14a;        /* монеты, улучшения */
+  --bad: #c44a4a;
+  --good: #5fbf5a;
+  --font-pixel: "Press Start 2P", "Courier New", monospace;
+  --font-body: "Rubik", "Segoe UI", system-ui, sans-serif;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px;
+  box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  overflow-x: hidden;
+}
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--soul); outline-offset: 2px; }
+.px { font-family: var(--font-pixel); }
+
+#app { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 8px; }
+
+/* Верхняя панель */
+#hud {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  background: var(--panel); border: 2px solid var(--line); padding: 8px 12px;
+  font-family: var(--font-pixel); font-size: 11px; line-height: 1.6;
+}
+#hud .stat { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#hud .soul { color: var(--soul); }
+#hud .hp { color: var(--hp); }
+#hud .spacer { flex: 1; }
+.pbtn {
+  font-family: var(--font-pixel); font-size: 10px; padding: 8px 10px;
+  background: var(--panel-2); border: 2px solid var(--line); color: var(--fg);
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,.35);
+}
+.pbtn:hover:not(:disabled) { border-color: var(--soul); }
+.pbtn:disabled { opacity: .4; cursor: not-allowed; }
+.pbtn.on { border-color: var(--gold); color: var(--gold); }
+
+/* Поле */
+#stage { position: relative; width: 100%; display: flex; justify-content: center; }
+#cv {
+  image-rendering: pixelated; image-rendering: crisp-edges;
+  border: 2px solid var(--line); background: #233; touch-action: none; display: block;
+  max-width: 100%;
+}
+#banner {
+  position: absolute; left: 50%; top: 12%; transform: translateX(-50%);
+  font-family: var(--font-pixel); font-size: 14px; color: var(--fg);
+  text-shadow: 2px 2px 0 #000; pointer-events: none; opacity: 0; transition: opacity .3s;
+  white-space: nowrap;
+}
+#banner.show { opacity: 1; }
+#tip {
+  position: absolute; pointer-events: none; transform: translate(-50%, -100%);
+  background: var(--panel); border: 2px solid var(--line); padding: 5px 8px;
+  font-family: var(--font-pixel); font-size: 9px; line-height: 1.7; white-space: nowrap; z-index: 5;
+}
+#tip .hp { color: var(--hp); }
+#tip .tag { color: var(--soul); }
+
+/* Панель выбранной башни */
+#tpanel {
+  position: absolute; right: 8px; top: 8px; width: 250px; max-width: calc(100% - 16px);
+  background: var(--panel); border: 2px solid var(--line); padding: 10px;
+  display: flex; flex-direction: column; gap: 8px; font-size: 13px;
+}
+#tpanel h3 { margin: 0; font-family: var(--font-pixel); font-size: 11px; line-height: 1.5; color: var(--gold); }
+#tpanel .rows { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+#tpanel .rows span:nth-child(odd) { color: var(--muted); }
+#tpanel .next { color: var(--good); }
+#tpanel .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+#tpanel .btns .pbtn { flex: 1; }
+#tpanel .targets { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+#tpanel .targets .pbtn { font-size: 8px; padding: 6px 4px; }
+#tpanel .close { position: absolute; right: 6px; top: 6px; padding: 4px 7px; }
+
+/* Ряд башен */
+#bar { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tcard {
+  display: grid; grid-template-columns: 34px 1fr; grid-template-rows: auto auto; column-gap: 8px;
+  align-items: center; width: 168px; padding: 6px 8px;
+  background: var(--panel); border: 2px solid var(--line); text-align: left;
+}
+.tcard canvas { grid-row: span 2; width: 32px; height: 32px; image-rendering: pixelated; }
+.tcard .nm { font-family: var(--font-pixel); font-size: 9px; line-height: 1.5; }
+.tcard .cs { font-family: var(--font-pixel); font-size: 9px; color: var(--soul); }
+.tcard .key { color: var(--muted); }
+.tcard.sel { border-color: var(--gold); background: var(--panel-2); }
+.tcard:disabled { opacity: .45; }
+#help { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
+
+/* Оверлеи: выбор карты, конец боя */
+.overlay {
+  position: fixed; inset: 0; background: rgba(10, 8, 16, .88); z-index: 20;
+  display: flex; align-items: center; justify-content: center; overflow-y: auto;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.sheet {
+  background: var(--panel); border: 2px solid var(--line); padding: 20px; width: 100%; max-width: 860px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.sheet h1, .sheet h2 { font-family: var(--font-pixel); margin: 0; line-height: 1.5; text-wrap: balance; }
+.sheet h1 { font-size: 18px; color: var(--soul); }
+.sheet h2 { font-size: 14px; }
+.sheet p { margin: 0; line-height: 1.55; color: var(--muted); max-width: 65ch; }
+.maps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.mapcard {
+  background: var(--panel-2); border: 2px solid var(--line); padding: 10px; text-align: left;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mapcard:hover { border-color: var(--soul); }
+.mapcard canvas { width: 100%; image-rendering: pixelated; border: 2px solid var(--line); }
+.mapcard .nm { font-family: var(--font-pixel); font-size: 11px; }
+.mapcard .ds { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.result { text-align: center; align-items: center; max-width: 480px; }
+.result .big { font-family: var(--font-pixel); font-size: 20px; line-height: 1.5; }
+.result .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+/* ---------- экраны меню ---------- */
+.screen { width: 100%; max-width: 1100px; }
+.screen.center { flex: 1; display: flex; align-items: center; justify-content: center; }
+.sheet.narrow { max-width: 460px; }
+.err { color: var(--hp) !important; min-height: 1.2em; }
+.inrow { display: flex; gap: 8px; flex-wrap: wrap; }
+input {
+  font: 14px var(--font-body); color: var(--fg); background: var(--bg); border: 2px solid var(--line);
+  padding: 9px 10px; flex: 1; min-width: 0;
+}
+input:focus { outline: none; border-color: var(--soul); }
+.pbtn.gold { border-color: var(--gold); color: var(--gold); }
+.logo { font-family: var(--font-pixel); font-size: clamp(24px, 6vw, 48px); line-height: 1.2; color: var(--soul);
+  text-shadow: 4px 4px 0 #0b3a36, 8px 8px 0 rgba(0,0,0,.4); letter-spacing: 2px; }
+.logo span { color: var(--gold); margin-left: .4em; text-shadow: 4px 4px 0 #5a4410, 8px 8px 0 rgba(0,0,0,.4); }
+.logo.small { font-size: 22px; }
+
+.avatar-wrap { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.avatar-stage { display: flex; flex-direction: column; align-items: center; gap: 8px; background: var(--bg);
+  border: 2px solid var(--line); padding: 12px; }
+.avatar-stage canvas { width: 160px; height: 160px; image-rendering: pixelated; }
+.avatar-stage span { font-size: 10px; }
+.avopts { flex: 1; min-width: 240px; display: grid; gap: 8px; }
+.opt { display: grid; grid-template-columns: 110px 34px 1fr 34px; align-items: center; gap: 6px; font-size: 13px; }
+.opt .val { text-align: center; font-family: var(--font-pixel); font-size: 9px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.opt .sw { width: 14px; height: 14px; border: 2px solid var(--line); display: inline-block; }
+.opt .pbtn { padding: 6px 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+#scrMenu { position: relative; flex: 1; min-height: 460px; display: flex; }
+#scrMenu[hidden] { display: none; }
+#menuBg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; filter: brightness(.45) saturate(.8); border: 2px solid var(--line); }
+.menu { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: space-between; gap: 24px; padding: clamp(16px, 4vw, 40px); }
+.menu-body { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+.stats { display: grid; gap: 6px; background: rgba(31,27,43,.88); border: 2px solid var(--line); padding: 12px 14px;
+  font-family: var(--font-pixel); font-size: 10px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.stats .s { display: flex; gap: 10px; align-items: center; }
+.ico { display: inline-block; width: 1.4em; text-align: center; }
+.ico.coin { color: var(--gold); } .ico.win { color: var(--soul); } .ico.dw { color: #8fb4ff; } .ico.dl { color: var(--hp); }
+.menu-btns { display: grid; gap: 10px; min-width: min(280px, 100%); }
+.mbtn {
+  font-family: var(--font-pixel); font-size: 14px; padding: 16px 18px; text-align: left; position: relative;
+  background: rgba(43,37,64,.95); border: 2px solid var(--line); color: var(--fg); box-shadow: inset 0 -4px 0 rgba(0,0,0,.35);
+}
+.mbtn:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); }
+#mPlay { border-color: var(--soul); color: var(--soul); font-size: 18px; }
+.mbtn:disabled { opacity: .5; cursor: not-allowed; }
+.mbtn span { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 8px; color: var(--muted); }
+.who { align-self: flex-start; display: flex; align-items: center; gap: 10px; background: rgba(31,27,43,.88);
+  border: 2px solid var(--line); padding: 6px 10px; }
+.who:hover { border-color: var(--soul); }
+.who canvas { width: 48px; height: 48px; image-rendering: pixelated; }
+.who span { font-size: 10px; }
+.who .edit { font-family: var(--font-body); font-size: 11px; color: var(--muted); }
+.modes { display: grid; gap: 8px; }
+
+/* ---------- магазин ---------- */
+.shop { display: flex; flex-direction: column; gap: 10px; }
+.shop-tabs { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+.shop-tabs .spacer { flex: 1; }
+.tab { font-family: var(--font-pixel); font-size: 12px; padding: 12px 24px; background: var(--panel); border: 2px solid var(--line); position: relative; min-width: 150px; }
+.tab.on { border-color: var(--gold); color: var(--gold); }
+.tab.wip { color: var(--muted); cursor: not-allowed; text-decoration: line-through; text-decoration-thickness: 2px; overflow: hidden; }
+.tab.wip span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(18,16,26,.72);
+  color: var(--hp); font-size: 9px; text-decoration: none; transform: rotate(-6deg); }
+.shop-main { display: grid; grid-template-columns: 112px minmax(0, 1fr) 280px; gap: 10px; align-items: start; }
+.loadout { display: flex; flex-direction: column; gap: 6px; }
+.loadout .lbl { font-size: 8px; color: var(--muted); text-align: center; }
+#slots { display: grid; gap: 6px; }
+.slot { position: relative; background: var(--panel); border: 2px solid var(--line); padding: 4px; display: flex; flex-direction: column; align-items: center; aspect-ratio: 1 / 1; justify-content: center; max-width: 100%; }
+.slot.sel { border-color: var(--gold); }
+.slot canvas { width: 56px; height: 56px; image-rendering: pixelated; }
+.slot .n { position: absolute; left: 5px; top: 4px; font-family: var(--font-pixel); font-size: 10px; }
+.slot .c { font-family: var(--font-pixel); font-size: 9px; color: var(--soul); }
+.slot .empty { font-size: 11px; color: var(--muted); }
+.grid-wrap { background: var(--panel); border: 2px solid var(--line); padding: 12px; min-width: 0; }
+.grid-wrap h2 { margin: 0 0 10px; font-family: var(--font-pixel); font-size: 13px; color: var(--fg); }
+.tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.tcell { background: var(--bg); border: 2px solid var(--line); padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; aspect-ratio: 1 / 1; justify-content: center; }
+.tcell canvas { width: 72px; height: 72px; image-rendering: pixelated; }
+.tcell .nm { font-family: var(--font-pixel); font-size: 9px; text-align: center; line-height: 1.4; }
+.tcell.locked canvas { filter: brightness(0) opacity(.55); }
+.tcell.locked .lock { position: absolute; top: 18px; font-family: var(--font-pixel); font-size: 10px; color: var(--hp); background: rgba(18,16,26,.8); padding: 4px 6px; }
+.tcell.locked .nm { color: var(--hp); }
+.tcell.on { border-color: var(--gold); }
+.tcell .eq { position: absolute; right: 4px; top: 4px; font-size: 8px; font-family: var(--font-pixel); color: var(--soul); }
+.detail { background: var(--panel); border: 2px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.detail .big { width: 100%; aspect-ratio: 1 / 1; image-rendering: pixelated; background: var(--bg); border: 2px solid var(--line); max-width: 100%; }
+.detail .head { display: flex; align-items: center; gap: 10px; }
+.detail .price { font-family: var(--font-pixel); font-size: 11px; color: var(--soul); border: 2px solid var(--soul); padding: 6px 8px; white-space: nowrap; }
+.detail .tname { font-family: var(--font-pixel); font-size: 14px; line-height: 1.4; }
+.detail .badge { font-size: 12px; padding: 4px 8px; border: 2px solid var(--line); align-self: flex-start; }
+.detail .badge.yes { border-color: var(--soul); color: var(--soul); }
+.detail .badge.cliff { border-color: var(--gold); color: var(--gold); }
+.detail .desc { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 0; }
+.detail .acts { display: grid; grid-template-columns: 1fr 44px; gap: 6px; }
+.detail .acts .pbtn { padding: 12px 8px; }
+.hanger { display: flex; align-items: center; justify-content: center; }
+.hanger svg { width: 22px; height: 22px; }
+.statbar { display: flex; flex-wrap: wrap; gap: 8px 28px; background: var(--panel); border: 2px solid var(--gold); padding: 10px 14px;
+  font-family: var(--font-pixel); font-size: 11px; font-variant-numeric: tabular-nums; }
+.statbar .s { display: flex; gap: 8px; align-items: center; }
+
+/* ---------- чит-меню ---------- */
+.pbtn.icon { display: inline-flex; align-items: center; justify-content: center; }
+.pbtn.icon svg { display: block; }
+input[type="range"] { width: 100%; padding: 0; border: 0; background: none; accent-color: var(--gold); }
+.cheat { display: grid; gap: 8px; border: 2px solid var(--line); padding: 10px; }
+.cheat .lbl { font-size: 10px; color: var(--muted); }
+.cheat .lbl span { color: var(--fg); }
+
+/* ---------- альманах ---------- */
+.alm-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 480px); gap: 10px; align-items: start; }
+.alm-head { display: flex; gap: 12px; align-items: center; }
+.alm-head canvas { width: 96px; height: 96px; image-rendering: pixelated; background: var(--bg); border: 2px solid var(--line); flex: none; }
+.alm-head .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.stbl-wrap { overflow-x: auto; }
+.stbl { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.stbl th, .stbl td { border: 1px solid var(--line); padding: 5px 6px; text-align: center; white-space: nowrap; }
+.stbl th { color: var(--muted); font-weight: 600; background: var(--bg); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.detail .desc.small { font-size: 11px; }
+@media (max-width: 860px) { .alm-main { grid-template-columns: 1fr; } }
+
+/* ---------- бой: чат и джойстик ---------- */
+#nameTag { position: absolute; transform: translate(-50%, -100%); font-family: var(--font-pixel); font-size: 9px; color: #fff; pointer-events: none; white-space: nowrap; z-index: 3;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+#bubble { position: absolute; transform: translate(-50%, -100%); background: #f4efe2; color: #1a1420; font-size: 12px; line-height: 1.35; padding: 4px 8px;
+  max-width: 220px; width: max-content; border: 2px solid #1a1420; pointer-events: none; z-index: 4; overflow-wrap: anywhere; text-align: center; }
+#bubble::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -5px; border: 5px solid transparent; border-top-color: #1a1420; border-bottom: 0; }
+#chatLog { position: absolute; left: 8px; bottom: 8px; max-width: min(360px, 60%); display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
+#chatLog div { background: rgba(18,16,26,.72); padding: 3px 7px; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+#chatLog b { color: var(--soul); font-weight: 600; }
+#chatForm { display: flex; gap: 6px; }
+#chatForm input { padding: 7px 9px; font-size: 13px; }
+#dpad { display: none; grid-template-columns: repeat(3, 48px); grid-template-areas: ". up ." "left down right"; gap: 4px; justify-content: center; }
+#dpad [data-k="up"] { grid-area: up; } #dpad [data-k="left"] { grid-area: left; } #dpad [data-k="down"] { grid-area: down; } #dpad [data-k="right"] { grid-area: right; }
+#dpad .pbtn { height: 44px; font-size: 14px; touch-action: none; user-select: none; }
+@media (pointer: coarse) {
+  #dpad { display: grid; position: absolute; z-index: 4; opacity: .85; }
+  #help { display: none; }
+}
+@media (max-width: 860px) {
+  .shop-main { grid-template-columns: 1fr; }
+  #slots { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .slot canvas { width: 40px; height: 40px; }
+  .detail .big { max-width: 220px; align-self: center; }
+}
+@media (prefers-reduced-motion: reduce) { #banner { transition: none; } }
+@media (max-width: 760px) {
+  #stage { flex-direction: column; align-items: center; gap: 8px; }
+  #tpanel { position: relative; right: auto; top: auto; width: 100%; max-width: 420px; }
+}
+@media (max-width: 520px) {
+  #hud { font-size: 9px; gap: 6px 10px; padding: 6px 8px; }
+  #hud .pbtn { font-size: 8px; padding: 7px 7px; }
+  #bar { flex-wrap: nowrap; gap: 4px; }
+  .tcard { width: auto; flex: 1 1 0; min-width: 0; grid-template-columns: 1fr; justify-items: center; row-gap: 2px; padding: 5px 2px; text-align: center; }
+  .tcard canvas { grid-row: auto; width: 32px; height: 32px; }
+  .tcard .nm { display: none; }
+  .tcard .cs { font-size: 8px; }
+  #chatForm .pbtn { font-size: 8px; }
+  #dpad { grid-template-columns: repeat(3, 42px); }
+  #dpad .pbtn { height: 40px; }
+}
+</style>
+
+<div id="app" class="screen" hidden>
+  <div id="hud">
+    <span class="stat" id="sWave">Волна 0/12</span>
+    <span class="stat" id="sTime">0:30</span>
+    <span class="stat hp" id="sHp">♥ 100</span>
+    <span class="stat soul" id="sSouls">◆ 650</span>
+    <span class="stat" id="sCount">Башни 0/20</span>
+    <span class="spacer"></span>
+    <button class="pbtn" id="bSkip" disabled>Пропустить</button>
+    <button class="pbtn" id="bSpeed">x1</button>
+    <button class="pbtn" id="bZoom" title="Приближение камеры">Камера x2</button>
+    <button class="pbtn" id="bCheat" hidden>Читы</button>
+    <button class="pbtn icon" id="bSettings" title="Настройки" aria-label="Настройки"><svg viewBox="0 0 12 12" width="14" height="14" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M5 0h2v2h1V1h2v2H9v1h2v1h1v2h-1v1h-2v1h1v2H8v-1H7v2H5v-2H4v1H2V9h1V8H1V7H0V5h1V4h2V3H2V1h2v1h1zM5 4h2v1h1v2H7v1H5V7H4V5h1z"/></svg></button>
+    <button class="pbtn" id="bMenu">Меню</button>
+  </div>
+  <div id="stage">
+    <canvas id="cv" width="480" height="288"></canvas>
+    <div id="banner"></div>
+    <div id="chatLog" aria-live="polite"></div>
+    <div id="nameTag" hidden></div>
+    <div id="bubble" hidden></div>
+    <div id="tpanel" hidden></div>
+    <div id="tip" hidden></div>
+    <div id="dpad" aria-label="Движение персонажа">
+    <button class="pbtn" data-k="up" aria-label="Вверх">▲</button>
+    <button class="pbtn" data-k="left" aria-label="Влево">◀</button>
+    <button class="pbtn" data-k="down" aria-label="Вниз">▼</button>
+    <button class="pbtn" data-k="right" aria-label="Вправо">▶</button>
+  </div>
+  </div>
+  <form id="chatForm" autocomplete="off">
+    <input id="chatIn" maxlength="80" placeholder="Enter — написать в чат">
+    <button class="pbtn" type="submit">Отправить</button>
+  </form>
+  <div id="bar"></div>
+  <div id="help">WASD или стрелки — ходить. Башня: клавиши 1–5 или кнопки внизу, потом клик по траве. ПКМ или Esc — отмена. Лучник ставится только на возвышенности (светлые плато). Клик по своей башне — улучшить, продать, сменить цель. Наведи на врага — имя и HP. Пробел — пауза.</div>
+</div>
+
+<!-- Первый запуск: ник -->
+<div class="screen center" id="scrNick" hidden>
+  <div class="sheet narrow">
+    <div class="logo small">LEVIATHAN<span>TD</span></div>
+    <p>Как тебя зовут? Ник будет виден над твоим персонажем.</p>
+    <form id="nickForm" class="inrow" autocomplete="off">
+      <input id="nickIn" maxlength="16" placeholder="Ник, 3–16 символов">
+      <button class="pbtn gold" type="submit">Дальше</button>
+    </form>
+    <p class="err" id="nickErr"></p>
+  </div>
+</div>
+
+<!-- Редактор персонажа -->
+<div class="screen center" id="scrAvatar" hidden>
+  <div class="sheet" style="max-width:640px">
+    <h2>Твой персонаж</h2>
+    <div class="avatar-wrap">
+      <div class="avatar-stage"><canvas id="avPreview" width="16" height="16"></canvas><span id="avNick" class="px"></span></div>
+      <div id="avOpts" class="avopts"></div>
+    </div>
+    <div class="row">
+      <button class="pbtn" id="avRandom">Случайно</button>
+      <button class="pbtn" id="avRename">Сменить ник</button>
+      <button class="pbtn gold" id="avDone">Готово</button>
+    </div>
+  </div>
+</div>
+
+<!-- Главное меню -->
+<div class="screen" id="scrMenu" hidden>
+  <canvas id="menuBg" width="480" height="288"></canvas>
+  <div class="menu">
+    <div class="logo">LEVIATHAN<span>TD</span></div>
+    <div class="menu-body">
+      <div class="stats" id="menuStats"></div>
+      <div class="menu-btns">
+        <button class="mbtn" id="mPlay">Играть</button>
+        <button class="mbtn" id="mShop">Магазин</button>
+        <button class="mbtn" id="mAlm">Альманах</button>
+        <button class="mbtn" id="mAch">Достижения</button>
+        <button class="mbtn" id="mSettings">Настройки</button>
+      </div>
+    </div>
+    <button class="who" id="mAvatar" title="Изменить персонажа"><canvas id="menuAvatar" width="16" height="16"></canvas><span id="menuNick" class="px"></span><span class="edit">изменить</span></button>
+  </div>
+</div>
+
+<!-- Выбор режима -->
+<div class="overlay" id="scrMode" hidden>
+  <div class="sheet narrow">
+    <h2>Режим</h2>
+    <div class="modes">
+      <button class="mbtn" id="modeSolo">Одиночная игра</button>
+      <button class="mbtn" disabled>Дуэль<span>Скоро</span></button>
+      <button class="mbtn" disabled>Ко-Оп<span>Скоро</span></button>
+      <button class="mbtn" disabled>Три-Оп<span>Скоро</span></button>
+      <button class="mbtn" disabled>Квад-Оп<span>Скоро</span></button>
+    </div>
+    <button class="pbtn" id="modeBack">Назад</button>
+  </div>
+</div>
+
+<!-- Магазин -->
+<div class="screen" id="scrShop" hidden>
+  <div class="shop">
+    <div class="shop-tabs">
+      <button class="tab on">Башни</button>
+      <button class="tab wip" disabled>Скины<span>В разработке</span></button>
+      <span class="spacer"></span>
+      <button class="pbtn" id="shopBack">Назад</button>
+    </div>
+    <div class="shop-main">
+      <aside class="loadout"><div class="lbl px">Экипировка</div><div id="slots"></div></aside>
+      <section class="grid-wrap"><h2>Башни</h2><div class="tgrid" id="tgrid"></div></section>
+      <aside class="detail" id="detail"></aside>
+    </div>
+    <div class="statbar" id="shopStats"></div>
+  </div>
+</div>
+
+<!-- Альманах -->
+<div class="screen" id="scrAlm" hidden>
+  <div class="shop">
+    <div class="shop-tabs" role="tablist">
+      <button class="tab on" id="almTabT" role="tab">Башни</button>
+      <button class="tab" id="almTabE" role="tab">Враги</button>
+      <span class="spacer"></span>
+      <button class="pbtn" id="almBack">Назад</button>
+    </div>
+    <div class="alm-main">
+      <section class="grid-wrap"><h2 id="almTitle">Башни</h2><div class="tgrid" id="almGrid"></div></section>
+      <aside class="detail" id="almDetail"></aside>
+    </div>
+  </div>
+</div>
+
+<!-- Достижения -->
+<div class="screen center" id="scrAch" hidden>
+  <div class="sheet narrow">
+    <h2>Достижения</h2>
+    <p>В разработке. Скоро здесь появятся задания и награды за них.</p>
+    <button class="pbtn" id="achBack">Назад</button>
+  </div>
+</div>
+
+<!-- Выбор карты -->
+<div class="overlay" id="mapSelect" hidden>
+  <div class="sheet">
+    <h2>Выбери карту</h2>
+    <div class="maps" id="mapList"></div>
+    <button class="pbtn" id="mapBack">Назад</button>
+  </div>
+</div>
+
+<!-- Чит-меню для тестов -->
+<!-- Настройки -->
+<div class="overlay" id="settingsMenu" hidden>
+  <div class="sheet narrow">
+    <h2>Настройки</h2>
+    <div class="cheat">
+      <label class="lbl px" for="setMusic">Громкость музыки: <span id="setMusicVal"></span></label>
+      <input id="setMusic" type="range" min="0" max="100" step="5">
+    </div>
+    <button class="pbtn gold" id="setClose">Готово</button>
+  </div>
+</div>
+
+<div class="overlay" id="cheatMenu" hidden>
+  <div class="sheet narrow">
+    <h2>Чит-меню</h2>
+    <p>Для тестов. Открывается 10 нажатиями на вкладку «Башни» в Альманахе. В бою — кнопка «Читы» сверху.</p>
+    <div class="cheat">
+      <div class="lbl px">Монеты: <span id="chCoins"></span></div>
+      <div class="row" data-cheat="coins">
+        <button class="pbtn" data-v="100">+100</button><button class="pbtn" data-v="1000">+1000</button><button class="pbtn" data-v="10000">+10000</button>
+      </div>
+      <form class="inrow" id="chCoinsForm"><input id="chCoinsIn" type="number" min="0" step="1" placeholder="Сколько монет"><button class="pbtn gold" type="submit">Добавить</button></form>
+    </div>
+    <div class="cheat">
+      <div class="lbl px">Души в бою: <span id="chSouls"></span></div>
+      <div class="row" data-cheat="souls">
+        <button class="pbtn" data-v="100">+100</button><button class="pbtn" data-v="1000">+1000</button><button class="pbtn" data-v="10000">+10000</button>
+      </div>
+      <form class="inrow" id="chSoulsForm"><input id="chSoulsIn" type="number" min="0" step="1" placeholder="Сколько душ"><button class="pbtn gold" type="submit">Добавить</button></form>
+    </div>
+    <button class="pbtn" id="chClose">Закрыть</button>
+  </div>
+</div>
+
+<!-- Пауза -->
+<div class="overlay" id="pauseMenu" hidden>
+  <div class="sheet result">
+    <div class="big">Пауза</div>
+    <div class="row">
+      <button class="pbtn gold" id="pResume">Продолжить</button>
+      <button class="pbtn" id="pQuit">Выйти в меню</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="endScreen" hidden>
+  <div class="sheet result">
+    <div class="big" id="endTitle">Победа!</div>
+    <p id="endText"></p>
+    <div class="row">
+      <button class="pbtn" id="bAgain">Ещё раз</button>
+      <button class="pbtn" id="bToMaps">В меню</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ============================================================ БАЛАНС (из balance.md)
+// Единицы: 1 стад = 1 клетка поля. Цена ур.1 — установка, дальше — цена улучшения.
+const TOWERS = {
+  recruit: { info: "Новобранец Левиафана. Стреляет пращой по противникам.",
+    name: "Рекрут", desc: "Стреляет из пращи", kind: "proj", proj: "stone", projSpeed: 30, hiddenFrom: 5,
+    levels: [
+      { cost: 250, dmg: 1, rate: 1.45, range: 12 },
+      { cost: 100, dmg: 1, rate: 1.45, range: 15 },
+      { cost: 200, dmg: 2, rate: 1.45, range: 15 },
+      { cost: 600, dmg: 4, rate: 1.21, range: 15 },
+      { cost: 1200, dmg: 4, rate: 0.66, range: 16 },
+    ] },
+  archer: { info: "Меткий лучник, большая дальность, более высокий урон, отлично против сильных врагов. Можно ставить только на возвышенности.",
+    name: "Лучник", desc: "Далеко и больно, но медленно", place: "cliff", kind: "proj", proj: "arrow", projSpeed: 45, hiddenFrom: 3,
+    levels: [
+      { cost: 450, dmg: 4, rate: 3.26, range: 26 },
+      { cost: 120, dmg: 4, rate: 3.26, range: 32 },
+      { cost: 450, dmg: 4, rate: 2.7, range: 36 },
+      { cost: 900, dmg: 12, rate: 2.7, range: 36 },
+      { cost: 3800, dmg: 40, rate: 2.56, range: 38 },
+    ] },
+  goblin: { info: "Этот бро зажжёт любую вечеринку. Метается бомбами по противникам. Наносит урон по области.",
+    name: "Гоблин", desc: "Бомбы по площади", kind: "bomb", hiddenFrom: 3,
+    levels: [
+      { cost: 350, dmg: 2, rate: 2.9, range: 7, splash: 4 },
+      { cost: 140, dmg: 2, rate: 2.9, range: 7, splash: 6 },
+      { cost: 250, dmg: 2, rate: 2.9, range: 9, splash: 6 },
+      { cost: 650, dmg: 4, rate: 2.4, range: 9, splash: 6 },
+      { cost: 2200, dmg: 12, rate: 59 / 30, range: 11, splash: 7 },
+    ] },
+  sword: { info: "Ловкий мечник, способный поражать взмахом своего меча несколько врагов.",
+    name: "Мечник", desc: "Удар + дуга по соседям", kind: "arc", hiddenFrom: 0,
+    levels: [
+      { cost: 300, dmg: 4, arcDmg: 2, rate: 29 / 15, range: 6, extra: 1, arcR: 3 },
+      { cost: 300, dmg: 4, arcDmg: 2, rate: 29 / 15, range: 8.5, extra: 1, arcR: 3 },
+      { cost: 820, dmg: 6, arcDmg: 3, rate: 13 / 12, range: 8.5, extra: 1, arcR: 3 },
+      { cost: 1400, dmg: 12, arcDmg: 6, rate: 13 / 12, range: 8.5, extra: 2, arcR: 4 },
+      { cost: 4200, dmg: 18, arcDmg: 9, rate: 53 / 60, range: 10.5, extra: 3, arcR: 6 },
+    ] },
+  dryad: { info: "Волшебница из Леса Шепчущих, замедляет противников лианами.",
+    name: "Дриада", desc: "Опутывает лианами", kind: "vine", hiddenFrom: 0,
+    levels: [
+      { cost: 200, dmg: 0, rate: 2.8, range: 8, root: 1.5, splash: 1.3 },
+      { cost: 200, dmg: 0, rate: 2.8, range: 8, root: 4, splash: 1.3 },
+      { cost: 500, dmg: 2, rate: 2.8, range: 8, root: 4, splash: 1.3 },
+      { cost: 860, dmg: 3, rate: 2.8, range: 10, root: 5, splash: 1.5 },
+      { cost: 4200, dmg: 5, rate: 2.8, range: 11, root: 7, splash: 5.2 },
+    ] },
+  spawn: { info: "Рекрут Леса Шепчущих. Стреляет очередями из игл.",
+    name: "Порождённый", desc: "Очереди игл", kind: "burst", proj: "needle", projSpeed: 40, hiddenFrom: 3,
+    levels: [
+      { cost: 450, dmg: 1, burst: 3, between: 1 / 6, rate: 1.4, range: 14 },
+      { cost: 160, dmg: 1, burst: 3, between: 1 / 6, rate: 1.4, range: 16 },
+      { cost: 240, dmg: 1, burst: 3, between: 1 / 6, rate: 1.4, range: 17 },
+      { cost: 1050, dmg: 2, burst: 6, between: 1 / 6, rate: 1.4, range: 17 },
+      { cost: 3400, dmg: 7, burst: 7, between: 1 / 6, rate: 1.2, range: 18 },
+    ] },
+  crypt: { info: "Возведение Чёрной Башни. Обеспечивает приростом душ каждую волну.",
+    name: "Склеп", desc: "Души в начале каждой волны", kind: "farm", limit: 12, hiddenFrom: 0,
+    levels: [
+      { cost: 300, income: 50 },
+      { cost: 250, income: 100 },
+      { cost: 550, income: 200 },
+      { cost: 1200, income: 500 },
+      { cost: 4800, income: 1500 },
+    ] },
+  mage: { info: "Статный чародей, атакующий противников взрывными огненными шарами. Бьёт по области.",
+    name: "Мракоборец", desc: "Огненные шары: прямой урон и взрыв", kind: "fireball", proj: "fire", projSpeed: 30, hiddenFrom: 3,
+    levels: [
+      { cost: 800, dmg: 4, splashDmg: 4, rate: 4.3, splash: 3.2, range: 16 },
+      { cost: 320, dmg: 4, splashDmg: 4, rate: 3.6, splash: 3.2, range: 16 },
+      { cost: 600, dmg: 4, splashDmg: 4, rate: 3.6, splash: 3.2, range: 19.5 },
+      { cost: 1800, dmg: 10, splashDmg: 14, rate: 3.6, splash: 5.1, range: 20.5 },
+      { cost: 8500, dmg: 40, splashDmg: 45, rate: 3.6, splash: 7, range: 24.5 },
+    ] },
+  engineers: { info: "База гоблинов-инженеров, создающих машины для убийств.",
+    name: "Гоблины-инженеры", desc: "Спавнер: машины едут навстречу врагам", kind: "spawner", limit: 10, hiddenFrom: 0, every: 46,
+    levels: [
+      { cost: 400, unit: "ram", hp: 30, speed: 4.5 },
+      { cost: 380, unit: "ram", hp: 70, speed: 4.5 },
+      { cost: 420, unit: "ram2", hp: 70, speed: 4.5, boom: { dmg: 20, r: 5.5 } },
+      { cost: 1200, unit: "chariot", hp: 90, speed: 4.5, boom: { dmg: 20, r: 5.5 }, gun: { dmg: 2, rate: 2 / 15, range: 18 } },
+      { cost: 7250, unit: "chariot2", hp: 800, speed: 4, boom: { dmg: 30, r: 10 }, gun: { dmg: 2, rate: 2 / 15, range: 18 },
+        grenade: { dmg: 15, splashDmg: 9, rate: 1.75, r: 4, range: 18 } },
+    ] },
+};
+const TOWER_ORDER = ["recruit", "archer", "goblin", "sword", "dryad", "spawn", "crypt", "mage", "engineers"];
+const UNITS = { ram: "Таран", ram2: "Таран с бочками", chariot: "Колесница", chariot2: "Бронеколесница" };
+
+// Враги. rootMult — какую долю времени лиан держат (0 — не действуют).
+const ENEMIES = {
+  dead:     { name: "Мертвяк", hp: 4, speed: 3.2, note: "Обычный зомби. Медленно, но верно бредёт к базе." },
+  fast:     { name: "Быстрый", hp: 3, speed: 5, note: "Хилый, зато очень быстрый." },
+  fat:      { name: "Толстяк", hp: 16, speed: 1.535, note: "Медленный и живучий." },
+  ghost:    { name: "Дух", hp: 10, speed: 3.2, hidden: true, note: "Скрытый: его видят не все башни." },
+  boss1:    { name: "Босс 1", hp: 180, speed: 1.4, boss: true, rootMult: 0.33, note: "Первый босс. Лианы держат его только 33% времени." },
+  riddle:   { name: "Загадка", hp: 10, speed: 3.2, deathPick: [["dead", 30], ["fast", 25], ["fat", 20], ["ghost", 20], ["boss1", 5]],
+              note: "При смерти превращается в случайного врага: Мертвяка, Быстрого, Толстяка, Духа или, с малым шансом, Босса 1." },
+  warlock:  { name: "Чернокнижник", hp: 200, speed: 1.4, rootMult: 0.5, summon: { every: 6, type: "skeleton", min: 2, max: 4 },
+              note: "Каждые 6 с открывает книгу и призывает 2–4 Скелетов. Лианы держат его 50% времени." },
+  skeleton: { name: "Скелет", hp: 7, speed: 3.2, note: "Его призывает Чернокнижник." },
+  boss2:    { name: "Босс 2", hp: 1600, speed: 1.07, boss: true, rootMult: 0.13, note: "Очень медленный и толстый. Лианы держат его только 13% времени." },
+  armor:    { name: "Живые доспехи", hp: 120, speed: 2.4, rootMult: 0, note: "Пустые латы. Лианы на них не действуют." },
+  ether:    { name: "Эфирный элементаль", hp: 140, speed: 3.6, deathAura: { r: 6, t: 3 },
+              note: "При смерти взрывается эфиром: башни рядом 3 с атакуют в 1.5 раза медленнее." },
+  gandzi:   { name: "Гандзи", hp: 800, speed: 3, hidden: true, note: "Скрытый и очень живучий." },
+  electro:  { name: "Электризованный", hp: 120, speed: 8, note: "Экстремально быстрый." },
+  slime:    { name: "Слизень", hp: 560, speed: 3.2, deathSpawn: { type: "jelly", min: 3, max: 4 }, note: "При смерти распадается на 3–4 Желе." },
+  jelly:    { name: "Желе", hp: 120, speed: 4.7, note: "Кусочек Слизня. Чуть медленнее Быстрого." },
+  riddle2:  { name: "Загадка 2", hp: 100, speed: 3.2, deathPick: [["electro", 30], ["slime", 30], ["armor", 25], ["gandzi", 12], ["boss2", 3]],
+              note: "При смерти превращается в Электризованного, Слизня, Живые доспехи, реже в Гандзи и совсем редко в Босса 2." },
+  boss3:    { name: "Босс 3", hp: 3000, speed: 5.1, boss: true, rootMult: 0.13, note: "Очень быстрый босс." },
+  boss4:    { name: "Босс 4", hp: 7400, speed: 3, boss: true, rootMult: 0.13, note: "Огромный запас здоровья." },
+  bossWarlock: { name: "Босс Чернокнижник", hp: 15000, speed: 3, boss: true, rootMult: 0.13, summon: { every: 8, type: "ifrit", min: 2, max: 2 },
+              note: "Каждые 8 с призывает двух Ифритов." },
+  ifrit:    { name: "Ифрит", hp: 700, speed: 3.2, note: "Огненный дух, его призывает Босс Чернокнижник." },
+  warden:   { name: "Сумеречный Страж", hp: 60000, speed: 0.8, boss: true, rootMult: 0, axe: { every: 10, r: 8, t: 5 },
+              note: "Раз в 10 с машет секирой: башни в радиусе 8 истекают кровью 5 с и не могут атаковать и улучшаться. Лианы не действуют." },
+  apostle:  { name: "Апостол Ноктурна", hp: 500000, speed: 0.5, boss: true, rootMult: 0,
+              roar: { r: 40, t: 4 }, stomp: { every: 15, r: 12, t: 6 }, bossCall: { every: 30, min: 3, max: 4, types: ["boss1", "boss2", "boss3", "boss4"] },
+              note: "Появляется с криком, который оглушает башни в большом радиусе. Раз в 15 с топает и оглушает башни рядом на 6 с (кроме башен на возвышенностях). Раз в 30 с призывает 3–4 боссов. Лианы не действуют." },
+};
+const ENEMY_ORDER = Object.keys(ENEMIES);
+
+// [тип, мин, макс] — количество выбирается случайно; ["pause", с] — пауза перед следующей группой
+const WAVES = [
+  { dur: 30, souls: 0, groups: [] },
+  { dur: 18, souls: 213, groups: [["dead", 6, 7]] },
+  { dur: 20, souls: 249, groups: [["dead", 9, 11]] },
+  { dur: 16, souls: 284, groups: [["fast", 7, 9]] },
+  { dur: 26, souls: 320, groups: [["dead", 6, 7], ["fast", 12, 12]] },
+  { dur: 24, souls: 356, groups: [["fat", 7, 9]] },
+  { dur: 33, souls: 391, groups: [["dead", 15, 15], ["fast", 8, 8]] },
+  { dur: 34, souls: 427, groups: [["fast", 8, 8], ["dead", 5, 5], ["fat", 8, 8]] },
+  { dur: 50, souls: 462, groups: [["fast", 8, 8], ["dead", 6, 6], ["fat", 5, 5], ["boss1", 1, 1]] },
+  { dur: 36, souls: 498, groups: [["fat", 20, 20]] },
+  { dur: 26, souls: 533, groups: [["ghost", 7, 8]] },
+  { dur: 37, souls: 569, groups: [["fat", 8, 8], ["boss1", 2, 2]] },
+  { dur: 26, souls: 604, groups: [["ghost", 10, 10]] },
+  { dur: 32, souls: 640, groups: [["riddle", 10, 10]] },
+  { dur: 60, souls: 676, groups: [["fat", 5, 5], ["pause", 5], ["boss1", 2, 2], ["pause", 3], ["fast", 8, 8], ["warlock", 1, 1]] },
+  { dur: 40, souls: 711, groups: [["riddle", 22, 22]] },
+  { dur: 30, souls: 747, groups: [["fat", 20, 20]] },
+  { dur: 90, souls: 782, groups: [["riddle", 1, 1], ["fast", 2, 2], ["ghost", 2, 2], ["dead", 2, 2], ["fat", 2, 2], ["riddle", 9, 9],
+    ["pause", 4], ["boss1", 2, 2], ["pause", 5], ["warlock", 1, 1], ["pause", 2.5], ["boss2", 1, 1]] },
+];
+
+const RULES = {
+  startSouls: 650, baseHp: 100, towerLimit: 20, sellRefund: 0.5,
+  skipAfter: 0.3, spawnInterval: 1,
+  // монеты за бой: [дошёл дальше волны N, монет]
+  coinTiers: [[15, 200], [10, 150], [5, 100]],
+  soulsPerDamage: 1, // души за каждую единицу нанесённого урона (без перебора сверх оставшегося HP)
+  // Спрайты крупнее стада, поэтому радиусы вокруг цели ×1.5, а дальность +10%.
+  // В TOWERS выше — исходные числа из balance.md, множители применяются ниже при запуске.
+  splashScale: 1.5, rangeScale: 1.1,
+};
+{
+  const k = (v, m) => Math.round(v * m * 100) / 100;
+  for (const def of Object.values(TOWERS)) for (const lv of def.levels) {
+    if (lv.range) lv.range = k(lv.range, RULES.rangeScale);
+    if (lv.splash) lv.splash = k(lv.splash, RULES.splashScale);
+    if (lv.arcR) lv.arcR = k(lv.arcR, RULES.splashScale);
+    if (lv.boom) lv.boom = { ...lv.boom, r: k(lv.boom.r, RULES.splashScale) };
+    if (lv.gun) lv.gun = { ...lv.gun, range: k(lv.gun.range, RULES.rangeScale) };
+    if (lv.grenade) lv.grenade = { ...lv.grenade, r: k(lv.grenade.r, RULES.splashScale), range: k(lv.grenade.range, RULES.rangeScale) };
+  }
+}
+
+// Поле 160×96 стадов, 1 стад = 3 px. Персонаж ~5 стадов ростом, как в Roblox. Дорога ≤ 270 стадов.
+const COLS = 160, ROWS = 96, CELL = 3;
+const MAPS = [
+  { id: "meadow", name: "Поляна", desc: "Змейка через луг. Дорога 270 стадов.",
+    theme: "meadow",
+    path: [[-2, 28], [40, 28], [40, 70], [85, 70], [85, 28], [125, 28], [125, 55], [157, 55]],
+    cliffs: [[8, 40, 24, 16], [52, 40, 21, 16], [95, 36, 22, 12], [132, 66, 22, 14]] },
+  { id: "swamp", name: "Болото", desc: "Петли через топь, база посреди болота. Дорога 270 стадов.",
+    theme: "swamp",
+    path: [[-2, 76], [28, 76], [28, 18], [65, 18], [65, 62], [100, 62], [100, 26], [130, 26]],
+    cliffs: [[36, 28, 21, 22], [73, 30, 19, 22], [110, 40, 30, 18]] },
+  { id: "graveyard", name: "Кладбище", desc: "Спираль к склепу. Дорога 270 стадов, повороты близко друг к другу.",
+    theme: "graveyard",
+    path: [[-2, 20], [105, 20], [105, 74], [52, 74], [52, 46], [80, 46]],
+    cliffs: [[12, 30, 28, 22], [116, 40, 30, 28], [60, 28, 34, 9]] },
+];
+
+// ============================================================ УТИЛИТЫ
+const $ = (id) => document.getElementById(id);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const irnd = (a, b) => Math.floor(rnd(a, b + 1));
+const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+function store(key, val) { try { if (val === undefined) return localStorage.getItem(key); localStorage.setItem(key, val); } catch (e) { return null; } }
+
+function pathInfo(points) {
+  const lens = [0]; let total = 0;
+  for (let i = 1; i < points.length; i++) { total += dist(...points[i - 1], ...points[i]); lens.push(total); }
+  return { points, lens, total };
+}
+function pointAt(p, d) {
+  const pts = p.points;
+  if (d <= 0) return { x: pts[0][0], y: pts[0][1], dx: 1, dy: 0 };
+  for (let i = 1; i < pts.length; i++) {
+    if (d <= p.lens[i]) {
+      const seg = p.lens[i] - p.lens[i - 1], t = seg > 0 ? (d - p.lens[i - 1]) / seg : 0;
+      const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+      return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t, dx: Math.sign(bx - ax), dy: Math.sign(by - ay) };
+    }
+  }
+  const [x, y] = pts[pts.length - 1]; return { x, y, dx: 1, dy: 0 };
+}
+function distToPath(p, x, y) {
+  let best = Infinity; const pts = p.points;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+    const abx = bx - ax, aby = by - ay, l2 = abx * abx + aby * aby;
+    const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * abx + (y - ay) * aby) / l2)) : 0;
+    best = Math.min(best, dist(x, y, ax + abx * t, ay + aby * t));
+  }
+  return best;
+}
+
+const baseX = (end) => Math.min(end[0], COLS - 5);
+
+// ============================================================ ПИКСЕЛЬ-АРТ
+// Спрайты рисуются кодом по пикселям в маленькие холсты, потом обводятся тёмным контуром.
+function sprite(w, h, draw) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  const px = (x, y, col, ww = 1, hh = 1) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); };
+  draw(px, g);
+  // контур
+  const img = g.getImageData(0, 0, w, h), d = img.data, out = new Uint8ClampedArray(d);
+  const solid = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (solid(x, y)) continue;
+    if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) {
+      const i = (y * w + x) * 4; out[i] = 22; out[i + 1] = 18; out[i + 2] = 30; out[i + 3] = 255;
+    }
+  }
+  img.data.set(out); g.putImageData(img, 0, 0);
+  return c;
+}
+function flipped(src) {
+  const c = document.createElement("canvas"); c.width = src.width; c.height = src.height;
+  const g = c.getContext("2d"); g.translate(src.width, 0); g.scale(-1, 1); g.drawImage(src, 0, 0); return c;
+}
+// Человечек 16×16, смотрит вправо
+function body(px, o) {
+  const skin = o.skin, shade = o.skinShade || o.skin;
+  px(6, 13, o.pants, 2, 2); px(9, 13, o.pants, 2, 2);         // ноги
+  px(6, 15, o.boots || "#3a2a20", 2, 1); px(9, 15, o.boots || "#3a2a20", 2, 1);
+  px(5, 8, o.shirt, 7, 5); px(5, 12, o.shirt2 || o.shirt, 7, 1); // туловище
+  px(4, 8, skin, 1, 4); px(12, 8, skin, 1, 4);                 // руки
+  px(6, 2, skin, 5, 6); px(6, 6, shade, 5, 1);                 // голова
+  px(9, 4, o.eye || "#1a1420"); px(7, 4, o.eye || "#1a1420");
+}
+const SPR = {};
+function buildSprites() {
+  SPR.recruit = sprite(16, 16, (px) => {
+    body(px, { skin: "#e8b796", skinShade: "#c98d6b", shirt: "#3b6fb6", shirt2: "#284d85", pants: "#4a4a5a" });
+    px(6, 1, "#7a4f2c", 5, 2); px(5, 2, "#7a4f2c", 1, 2);       // волосы
+    px(13, 5, "#7a4f2c", 1, 4); px(14, 4, "#9a6a3c"); px(14, 3, "#9aa3b2", 2, 2); // праща с камнем
+  });
+  SPR.archer = sprite(16, 16, (px) => {
+    body(px, { skin: "#e8b796", skinShade: "#c98d6b", shirt: "#4f9b45", shirt2: "#2f6b2e", pants: "#6b4a2a" });
+    px(5, 1, "#2f6b2e", 7, 2); px(5, 3, "#2f6b2e", 1, 4); px(11, 1, "#2f6b2e", 1, 2); // капюшон
+    px(13, 3, "#8a5a2c", 1, 10); px(14, 2, "#8a5a2c"); px(14, 13, "#8a5a2c");      // лук
+    px(12, 4, "#e8e0d0", 1, 8);                                                   // тетива
+    px(3, 6, "#7a4f2c", 2, 6); px(3, 5, "#c8c8c8", 2, 1);                         // колчан
+  });
+  SPR.goblin = sprite(16, 16, (px) => {
+    body(px, { skin: "#7fb04a", skinShade: "#5d8a35", shirt: "#7a4f2c", shirt2: "#573519", pants: "#4a3a2a", eye: "#e8d040" });
+    px(4, 3, "#7fb04a", 2, 1); px(3, 2, "#7fb04a"); px(11, 3, "#7fb04a", 2, 1); px(13, 2, "#7fb04a"); // уши
+    px(12, 10, "#22202a", 3, 3); px(13, 9, "#e88a2f"); px(14, 8, "#ffd060");      // бомба с фитилём
+  });
+  SPR.sword = sprite(16, 16, (px) => {
+    body(px, { skin: "#e8b796", skinShade: "#c98d6b", shirt: "#9aa3b2", shirt2: "#6c7484", pants: "#3a3a48" });
+    px(6, 1, "#9aa3b2", 5, 2); px(5, 2, "#6c7484", 1, 3); px(11, 2, "#6c7484", 1, 3); // шлем
+    px(13, 1, "#e6ecf4", 1, 9); px(12, 9, "#c9a040", 3, 1); px(13, 10, "#7a4f2c", 1, 2); // меч
+  });
+  SPR.dryad = sprite(16, 16, (px) => {
+    body(px, { skin: "#d8c8a0", skinShade: "#b8a47a", shirt: "#3f8f50", shirt2: "#2a6a38", pants: "#3f8f50", boots: "#5a3a20" });
+    px(5, 0, "#79c95b", 7, 3); px(4, 2, "#79c95b", 1, 6); px(11, 2, "#4fa040", 1, 6); px(6, 0, "#e86a9a"); // листья-волосы и цветок
+    px(13, 6, "#4fa040", 1, 6); px(14, 5, "#79c95b"); px(14, 11, "#79c95b"); px(2, 10, "#4fa040", 2, 1); // лианы
+  });
+  SPR.spawn = sprite(16, 16, (px) => {
+    body(px, { skin: "#8a6ab0", skinShade: "#6a4a90", shirt: "#3a2a50", shirt2: "#2a1c3c", pants: "#2a1c3c", eye: "#ff4060" });
+    px(3, 6, "#d8d0e8"); px(2, 8, "#d8d0e8"); px(3, 10, "#d8d0e8"); px(4, 5, "#d8d0e8");  // иглы на спине
+    px(7, 1, "#6a4a90"); px(9, 0, "#6a4a90", 1, 2);                                      // рожки
+    px(13, 8, "#d8d0e8", 2, 1);
+  });
+
+  // враги 12×12 (босс 20×20), смотрят вправо, руки вперёд
+  const zombie = (o) => (px) => {
+    const w = o.wide ? 1 : 0;
+    px(4 - w, 9, o.pants, 2, 2); px(7, 9, o.pants, 2, 2);
+    px(3 - w, 5, o.shirt, 6 + 2 * w, 4);
+    px(9 + w, 5, o.skin, 3 - w, 1); px(9 + w, 7, o.skin, 3 - w, 1);   // руки вперёд
+    px(4, 1, o.skin, 5, 4); px(7, 2, o.eye || "#e04040"); px(5, 2, o.eye || "#e04040");
+    if (o.torn) { px(5, 8, o.skin); px(3, 6, o.skin); }
+  };
+  SPR.dead = sprite(12, 12, zombie({ skin: "#8fbf74", shirt: "#4a5a8a", pants: "#3a3a4a", torn: true }));
+  SPR.fast = sprite(12, 12, zombie({ skin: "#a8c860", shirt: "#b04040", pants: "#2a2a2a", eye: "#ffe040" }));
+  SPR.fat = sprite(12, 12, zombie({ skin: "#7aa868", shirt: "#c8bfa0", pants: "#5a4a3a", wide: true, torn: true }));
+  SPR.ghost = sprite(12, 12, (px) => {
+    px(3, 2, "#cfeaff", 6, 7); px(4, 1, "#cfeaff", 4, 1); px(3, 9, "#cfeaff"); px(5, 9, "#cfeaff"); px(7, 9, "#cfeaff"); px(8, 10, "#cfeaff");
+    px(4, 4, "#2a3a5a"); px(7, 4, "#2a3a5a"); px(5, 6, "#8cb4d8", 2, 1); px(9, 5, "#cfeaff", 2, 1);
+  });
+  SPR.boss1 = sprite(20, 20, (px) => {
+    px(6, 15, "#3a2a2a", 3, 4); px(11, 15, "#3a2a2a", 3, 4);
+    px(4, 8, "#6a1c24", 12, 8); px(5, 14, "#4a1218", 10, 1);
+    px(15, 9, "#5f8a50", 4, 2); px(15, 12, "#5f8a50", 4, 2);
+    px(6, 2, "#5f8a50", 8, 6); px(11, 4, "#ff3a2a"); px(8, 4, "#ff3a2a");
+    px(6, 0, "#e8c14a", 1, 2); px(9, 0, "#e8c14a", 1, 2); px(13, 0, "#e8c14a", 1, 2); px(6, 1, "#e8c14a", 8, 1); // корона
+    px(7, 9, "#8a2a30"); px(12, 11, "#8a2a30");
+  });
+  // --- новые башни
+  SPR.crypt = sprite(16, 16, (px) => {
+    px(3, 15, "#2a2438", 10, 1); px(4, 5, "#3a3448", 8, 10); px(5, 6, "#4a4458", 6, 9);
+    px(3, 4, "#2a2438", 10, 2); px(6, 1, "#2a2438", 4, 3); px(7, 0, "#2a2438", 2, 1);
+    px(4, 3, "#2a2438"); px(11, 3, "#2a2438");
+    px(7, 7, "#9a4fd0", 2, 3); px(7, 7, "#d8a8ff"); px(6, 12, "#1a1420", 4, 3); px(7, 11, "#1a1420", 2, 1);
+  });
+  SPR.mage = sprite(16, 16, (px) => {
+    body(px, { skin: "#e8b796", skinShade: "#c98d6b", shirt: "#2a2a6a", shirt2: "#1a1a4a", pants: "#2a2a6a", boots: "#1a1a2a" });
+    px(5, 2, "#1a1a4a", 7, 1); px(6, 0, "#1a1a4a", 4, 2); px(9, 0, "#e8c14a"); // шляпа
+    px(7, 7, "#d8d8e0", 3, 2);                                               // борода
+    px(13, 4, "#7a4f2c", 1, 10); px(12, 1, "#ff8a30", 3, 3); px(13, 2, "#fff060"); // посох и огонь
+  });
+  SPR.engineers = sprite(16, 16, (px) => {
+    body(px, { skin: "#7fb04a", skinShade: "#5d8a35", shirt: "#c88a2a", shirt2: "#8a5a1a", pants: "#4a3a2a", eye: "#e8d040" });
+    px(4, 3, "#7fb04a", 2, 1); px(3, 2, "#7fb04a"); px(11, 3, "#7fb04a", 2, 1); px(13, 2, "#7fb04a");
+    px(6, 1, "#e8c14a", 5, 2); px(5, 2, "#e8c14a", 7, 1);                     // каска
+    px(13, 6, "#9aa3b2", 1, 6); px(12, 5, "#9aa3b2", 3, 1);                   // ключ
+  });
+  // --- юниты спавнера (смотрят вправо)
+  const gob = (px, x, y, bow) => { px(x, y, "#7fb04a", 3, 3); px(x + 1, y + 1, "#e8d040"); px(x, y + 3, "#7a4f2c", 3, 2); if (bow) px(x + 3, y, "#8a5a2c", 1, 4); };
+  const ram = (barrels) => (px) => {
+    px(1, 5, "#7a4f2c", 12, 4); px(1, 6, "#9a6a3c", 12, 1); px(13, 4, "#6c7484", 3, 6); px(15, 5, "#9aa3b2", 1, 4);
+    px(3, 9, "#3a2a20", 3, 3); px(9, 9, "#3a2a20", 3, 3); px(4, 10, "#8a7a6a"); px(10, 10, "#8a7a6a");
+    gob(px, 2, 0, false);
+    if (barrels) { px(7, 2, "#8a3a20", 4, 3); px(7, 3, "#c8a040", 4, 1); }
+  };
+  SPR.ram = sprite(16, 12, ram(false));
+  SPR.ram2 = sprite(16, 12, ram(true));
+  SPR.chariot = sprite(18, 14, (px) => {
+    px(1, 7, "#7a4f2c", 15, 4); px(1, 6, "#9a6a3c", 15, 1); px(16, 8, "#9aa3b2", 2, 1); px(16, 10, "#9aa3b2", 2, 1);
+    px(3, 11, "#3a2a20", 3, 3); px(11, 11, "#3a2a20", 3, 3);
+    gob(px, 3, 1, true); gob(px, 9, 1, true);
+  });
+  SPR.chariot2 = sprite(20, 16, (px) => {
+    px(1, 8, "#6c7484", 17, 5); px(1, 7, "#9aa3b2", 17, 1); px(18, 9, "#c8ccd8", 2, 3);
+    for (let i = 3; i < 17; i += 4) px(i, 10, "#3a3a48");
+    px(2, 13, "#2a2a30", 4, 3); px(8, 13, "#2a2a30", 4, 3); px(14, 13, "#2a2a30", 4, 3);
+    gob(px, 2, 2, true); gob(px, 8, 2, true); gob(px, 13, 2, false); px(16, 1, "#22202a", 2, 2); px(17, 0, "#ffd060");
+  });
+  // --- новые враги 12×12
+  SPR.riddle = sprite(12, 12, (px) => {
+    px(2, 2, "#5a3a90", 8, 8); px(3, 3, "#7a4fb0", 6, 6);
+    px(5, 3, "#ffe060", 2, 1); px(7, 4, "#ffe060"); px(6, 5, "#ffe060"); px(6, 6, "#ffe060"); px(6, 8, "#ffe060");
+    px(3, 10, "#5a3a90"); px(8, 10, "#5a3a90");
+  });
+  SPR.riddle2 = sprite(12, 12, (px) => {
+    px(2, 2, "#a07a20", 8, 8); px(3, 3, "#d8a830", 6, 6);
+    px(5, 3, "#c03030", 2, 1); px(7, 4, "#c03030"); px(6, 5, "#c03030"); px(6, 6, "#c03030"); px(6, 8, "#c03030");
+    px(3, 10, "#a07a20"); px(8, 10, "#a07a20");
+  });
+  SPR.warlock = sprite(12, 12, (px) => {
+    px(3, 4, "#4a2a6a", 6, 7); px(2, 10, "#4a2a6a", 8, 1); px(4, 1, "#d8c8a0", 4, 3);
+    px(3, 0, "#2a1a3a", 6, 2); px(3, 2, "#2a1a3a", 1, 3); px(8, 2, "#2a1a3a", 1, 3);
+    px(5, 2, "#ff4060"); px(7, 2, "#ff4060"); px(9, 5, "#8a2a2a", 3, 3); px(10, 6, "#e8c14a");
+  });
+  SPR.skeleton = sprite(12, 12, zombie({ skin: "#e8e4d8", shirt: "#bfb9a8", pants: "#a8a290", eye: "#1a1420" }));
+  SPR.armor = sprite(12, 12, (px) => { zombie({ skin: "#9aa3b2", shirt: "#6c7484", pants: "#4a5262", eye: "#ff3a2a" })(px); px(5, 0, "#c84040", 3, 1); px(4, 6, "#9aa3b2", 4, 1); });
+  SPR.ether = sprite(12, 12, (px) => {
+    px(4, 2, "#5ab8e8", 4, 8); px(3, 4, "#8ad8ff", 6, 4); px(5, 0, "#cfeaff", 2, 2); px(5, 5, "#ffffff", 2, 2);
+    px(1, 5, "#8ad8ff", 2, 1); px(9, 4, "#8ad8ff", 2, 1); px(5, 10, "#5ab8e8", 2, 1);
+  });
+  SPR.gandzi = sprite(12, 12, (px) => { zombie({ skin: "#3a3a4a", shirt: "#1a1a2a", pants: "#1a1a2a", eye: "#ff3a5a" })(px); px(4, 4, "#c03040", 5, 1); px(2, 4, "#c03040", 2, 1); });
+  SPR.electro = sprite(12, 12, (px) => {
+    zombie({ skin: "#f0e060", shirt: "#3a6ad0", pants: "#2a2a3a", eye: "#ffffff" })(px);
+    px(3, 0, "#fff8a0"); px(9, 1, "#fff8a0"); px(1, 7, "#fff8a0"); px(10, 9, "#fff8a0");
+  });
+  SPR.slime = sprite(12, 12, (px) => {
+    px(1, 5, "#3f9a3a", 10, 6); px(2, 4, "#5fbf5a", 8, 1); px(3, 3, "#5fbf5a", 6, 1); px(2, 5, "#5fbf5a", 8, 4);
+    px(4, 6, "#1a1420"); px(7, 6, "#1a1420"); px(3, 4, "#bff0a0", 2, 1);
+  });
+  SPR.jelly = sprite(12, 12, (px) => {
+    px(3, 7, "#5fbf5a", 6, 4); px(4, 6, "#8ad870", 4, 1); px(4, 7, "#8ad870", 4, 2);
+    px(5, 8, "#1a1420"); px(7, 8, "#1a1420"); px(4, 7, "#d0f8c0");
+  });
+  SPR.ifrit = sprite(12, 12, (px) => {
+    zombie({ skin: "#ff8a30", shirt: "#c03a1a", pants: "#7a1a10", eye: "#fff060" })(px);
+    px(4, 0, "#ffd060", 1, 1); px(6, 0, "#ff6020", 2, 1); px(5, 0, "#ff8a30"); px(8, 0, "#ffd060");
+  });
+  // --- крупные боссы: человечек в сетке 20×20, масштабируется под размер
+  const brute = (S, o) => (px) => {
+    const u = S / 20;
+    const R = (x, y, w, h, c) => px(Math.round(x * u), Math.round(y * u), c, Math.max(1, Math.round(w * u)), Math.max(1, Math.round(h * u)));
+    R(6, 15, 3, 4, o.legs); R(11, 15, 3, 4, o.legs);
+    R(4, 8, 12, 8, o.body); R(5, 14, 10, 1, o.belt);
+    R(15, 9, 4, 2, o.arm || o.skin); R(15, 12, 4, 2, o.arm || o.skin);
+    R(6, 2, 8, 6, o.skin); R(8, 4, 1, 1, o.eye); R(11, 4, 1, 1, o.eye);
+    if (o.extra) o.extra(R);
+  };
+  SPR.boss2 = sprite(22, 22, brute(22, { legs: "#1a2240", body: "#2a3a6a", belt: "#1a2448", skin: "#5a7aa8", eye: "#ffd040",
+    extra: (R) => { R(6, 0, 1, 2, "#e8e0d0"); R(13, 0, 1, 2, "#e8e0d0"); R(6, 10, 3, 2, "#3a4a7a"); } }));
+  SPR.boss3 = sprite(20, 20, brute(20, { legs: "#4a1a10", body: "#a02a1a", belt: "#6a1a10", skin: "#d06a3a", eye: "#fff060",
+    extra: (R) => { R(3, 6, 1, 3, "#2a1010"); R(2, 9, 1, 3, "#2a1010"); R(7, 1, 6, 1, "#2a1010"); } }));
+  SPR.boss4 = sprite(24, 24, brute(24, { legs: "#4a4a54", body: "#6a6a74", belt: "#4a4a54", skin: "#8a8a94", arm: "#7a7a84", eye: "#7fe0d0",
+    extra: (R) => { R(5, 9, 2, 1, "#4f9b45"); R(12, 12, 2, 1, "#4f9b45"); R(7, 6, 6, 1, "#6a6a74"); } }));
+  SPR.bossWarlock = sprite(24, 24, brute(24, { legs: "#2a1a3a", body: "#4a2a6a", belt: "#e8c14a", skin: "#d8c8a0", arm: "#4a2a6a", eye: "#ff4060",
+    extra: (R) => { R(6, 0, 8, 2, "#e8c14a"); R(7, 0, 1, 1, "#c03030"); R(15, 8, 5, 5, "#8a2a2a"); R(17, 10, 1, 1, "#e8c14a"); R(3, 14, 14, 3, "#4a2a6a"); } }));
+  SPR.warden = sprite(26, 26, brute(26, { legs: "#1a1a24", body: "#2a2a38", belt: "#4a3a2a", skin: "#4a4a5a", arm: "#3a3a48", eye: "#ff3a2a",
+    extra: (R) => { R(17, 1, 1, 15, "#7a4f2c"); R(18, 1, 2, 6, "#c8ccd8"); R(16, 2, 1, 4, "#c8ccd8"); R(6, 1, 8, 1, "#3a3a48"); R(9, 0, 2, 1, "#c84040"); } }));
+  SPR.apostle = sprite(30, 30, brute(30, { legs: "#120a1a", body: "#1a1024", belt: "#c060ff", skin: "#e8e0f0", arm: "#1a1024", eye: "#c060ff",
+    extra: (R) => { R(5, 0, 10, 1, "#c060ff"); R(3, 9, 14, 9, "#1a1024"); R(1, 8, 2, 7, "#3a2050"); R(17, 8, 2, 7, "#3a2050"); R(9, 10, 2, 5, "#c060ff"); } }));
+  for (const k of Object.keys(SPR)) SPR[k + "_L"] = flipped(SPR[k]);
+}
+
+// ============================================================ КАРТА (фон)
+const THEMES = {
+  meadow:    { grass: ["#5d9a44", "#6aa84e", "#548c3d"], dirt: ["#b08a5c", "#a07c50", "#c09a6a"], decor: "tree", cliff: ["#7cb85a", "#8a7058", "#5e4a3a"] },
+  swamp:     { grass: ["#4a6e46", "#55794e", "#3f603c"], dirt: ["#7a6a4a", "#6c5e42", "#86765a"], decor: "reed", cliff: ["#64885a", "#6a6458", "#48443c"] },
+  graveyard: { grass: ["#4a5a4c", "#535f52", "#424f44"], dirt: ["#7e766c", "#70695f", "#8a8278"], decor: "grave", cliff: ["#66746a", "#6a6a74", "#46464e"] },
+};
+function buildBackground(map, pinfo) {
+  const th = THEMES[map.theme];
+  const W = COLS * CELL, H = ROWS * CELL;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  const img = g.createImageData(W, H), d = img.data;
+  const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const grass = th.grass.map(hex), dirt = th.dirt.map(hex);
+  let seed = map.id.length * 9973;
+  const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const cx = (x + 0.5) / CELL, cy = (y + 0.5) / CELL;
+    const dp = distToPath(pinfo, cx, cy);
+    let col;
+    if (dp <= 3.2) col = dirt[r() < 0.82 ? 0 : (r() < 0.5 ? 1 : 2)];
+    else if (dp <= 3.7) col = dirt[1];
+    else col = grass[r() < 0.8 ? 0 : (r() < 0.5 ? 1 : 2)];
+    const i = (y * W + x) * 4; d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+
+  // возвышенности: плато с каменным обрывом снизу
+  const cliffs = (map.cliffs || []).map(([x, y, w, h]) => ({ x, y, w, h }));
+  for (const c of cliffs) {
+    const X = c.x * CELL, Y = c.y * CELL, Wd = c.w * CELL, Hd = c.h * CELL;
+    g.fillStyle = th.cliff[2]; g.fillRect(X - 1, Y - 1, Wd + 2, Hd + 8);
+    g.fillStyle = th.cliff[1]; g.fillRect(X, Y + Hd, Wd, 6);
+    g.fillStyle = th.cliff[2]; for (let i = 3; i < Wd; i += 7) g.fillRect(X + i, Y + Hd + 1, 1, 4);
+    g.fillStyle = th.cliff[0]; g.fillRect(X, Y, Wd, Hd);
+    g.fillStyle = "rgba(255,255,255,.12)"; g.fillRect(X, Y, Wd, 1);
+    for (let i = 0; i < c.w * c.h / 6; i++) { g.fillStyle = r() < 0.5 ? "rgba(0,0,0,.08)" : "rgba(255,255,255,.07)"; g.fillRect(X + Math.floor(r() * Wd), Y + Math.floor(r() * Hd), 1, 1); }
+  }
+  const nearCliff = (x, y, m) => cliffs.some((c) => x > c.x - m && x < c.x + c.w + m && y > c.y - m && y < c.y + c.h + m + 2);
+
+  // декор (он же препятствия для постройки)
+  const decor = [];
+  const end = pinfo.points[pinfo.points.length - 1];
+  for (let tries = 0; tries < 3000 && decor.length < 40; tries++) {
+    const x = 5 + r() * (COLS - 10), y = 5 + r() * (ROWS - 8);
+    if (distToPath(pinfo, x, y) < 8) continue;
+    if (dist(x, y, end[0], end[1]) < 14) continue;
+    if (nearCliff(x, y, 4)) continue;
+    if (decor.some((o) => dist(o.x, o.y, x, y) < 10)) continue;
+    decor.push({ x, y, r: 3 });
+  }
+  for (const o of decor) drawDecor(g, th.decor, o.x * CELL, o.y * CELL, r);
+
+  // портал у входа и база в конце
+  const [sx, sy] = pinfo.points[0];
+  const px = Math.max(1, sx) * CELL, py = sy * CELL;
+  g.fillStyle = "#2a1a3a"; g.fillRect(px - 4, py - 14, 10, 22);
+  g.fillStyle = "#9a4fd0"; g.fillRect(px - 2, py - 12, 6, 18);
+  g.fillStyle = "#d8a8ff"; g.fillRect(px, py - 9, 2, 12);
+  return { canvas: c, decor, cliffs };
+}
+function drawDecor(g, type, x, y, r) {
+  x = Math.round(x); y = Math.round(y);
+  if (type === "tree") {
+    g.fillStyle = "#5a3a20"; g.fillRect(x - 1, y, 3, 6);
+    g.fillStyle = "#2f6b2e"; g.fillRect(x - 6, y - 8, 13, 9);
+    g.fillStyle = "#3f8a3a"; g.fillRect(x - 5, y - 10, 11, 9);
+    g.fillStyle = "#58a84a"; g.fillRect(x - 3, y - 9, 4, 3);
+  } else if (type === "reed") {
+    g.fillStyle = "#2e4a4a"; g.fillRect(x - 7, y - 2, 15, 6);
+    g.fillStyle = "#3a6060"; g.fillRect(x - 6, y - 1, 13, 4);
+    g.fillStyle = "#8a9a50"; for (let i = -4; i <= 4; i += 3) g.fillRect(x + i, y - 8 + (i & 1), 1, 7);
+    g.fillStyle = "#6a4a2a"; g.fillRect(x - 4, y - 9, 1, 2); g.fillRect(x + 2, y - 8, 1, 2);
+  } else {
+    if (r() < 0.6) {
+      g.fillStyle = "#3a3a44"; g.fillRect(x - 4, y - 7, 9, 10);
+      g.fillStyle = "#8a8a94"; g.fillRect(x - 3, y - 8, 7, 10);
+      g.fillStyle = "#6a6a74"; g.fillRect(x - 1, y - 6, 3, 1); g.fillRect(x, y - 7, 1, 4);
+    } else {
+      g.fillStyle = "#4a3828"; g.fillRect(x - 1, y - 8, 3, 11); g.fillRect(x - 4, y - 5, 9, 2);
+    }
+  }
+}
+function drawBase(g, x, y) {
+  x = Math.round(x); y = Math.round(y);
+  g.fillStyle = "#3a3a44"; g.fillRect(x - 11, y - 16, 22, 22);
+  g.fillStyle = "#8a8a94"; g.fillRect(x - 10, y - 15, 20, 20);
+  g.fillStyle = "#6a6a74"; for (let i = -10; i < 10; i += 4) g.fillRect(x + i, y - 18, 2, 3);
+  g.fillStyle = "#5a3a20"; g.fillRect(x - 3, y - 4, 6, 9);
+  g.fillStyle = "#e8c14a"; g.fillRect(x, y - 26, 1, 9); g.fillRect(x + 1, y - 26, 5, 3);
+}
+
+// ============================================================ СОСТОЯНИЕ ИГРЫ
+const cv = $("cv"), ctx = cv.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+let G = null;           // текущий бой
+let placing = null;     // id башни, которую ставим
+let selected = null;    // выбранная башня
+let mouse = { x: -100, y: -100, cx: -100, cy: -100, in: false };
+let speed = 1, paused = false;
+let inspected = null; // враг, по которому кликнули
+
+function newGame(mapIndex) {
+  const map = MAPS[mapIndex];
+  const pinfo = pathInfo(map.path);
+  const bg = buildBackground(map, pinfo);
+  G = {
+    mapIndex, map, path: pinfo, bg: bg.canvas, decor: bg.decor, cliffs: bg.cliffs,
+    souls: RULES.startSouls, hp: RULES.baseHp,
+    wave: 0, waveTime: 0, queue: [], spawnTimer: 0,
+    enemies: [], pending: [], units: [], towers: [], shots: [], fx: [],
+    over: false, time: 0, uid: 0,
+  };
+  const end = pinfo.points[pinfo.points.length - 1];
+  G.player = { x: clamp(baseX(end) - 12, 4, COLS - 4), y: clamp(end[1] + 8, 6, ROWS - 2), dir: -1, moving: false, walk: 0, bubble: "", bubbleT: 0 };
+  G.loadout = PROFILE.loadout.filter(Boolean);
+  placing = null; selected = null; paused = false; inspected = null;
+  $("chatLog").innerHTML = "";
+  music.currentTime = 0;
+  show("app");
+  startWave(0);
+  renderBar(); updatePanel(); updateHud(); fit();
+}
+
+function buildQueue(w) {
+  const list = [];
+  for (const [type, a, b] of WAVES[w].groups) {
+    if (type === "pause") { list.push({ pause: a }); continue; }
+    const n = irnd(a, b); for (let i = 0; i < n; i++) list.push(type);
+  }
+  return list;
+}
+function startWave(w) {
+  G.wave = w; G.waveTime = 0;
+  G.souls += WAVES[w].souls;
+  // склепы приносят души со следующей волны после установки
+  for (const t of G.towers) if (TOWERS[t.type].kind === "farm" && t.placedWave < w) {
+    const inc = towerStats(t).income; G.souls += inc; fxText(t.x - 3, t.y - 6, `+${inc}`, "#7fe0d0");
+  }
+  G.queue.push(...buildQueue(w));
+  if (w > 0) banner(`Волна ${w}` + (WAVES[w].souls ? `  +${WAVES[w].souls} душ` : ""));
+  else banner("Подготовка: 30 секунд");
+  renderBar(); updatePanel();
+}
+function canSkip() {
+  return G && !G.over && G.wave < WAVES.length - 1 && G.waveTime >= WAVES[G.wave].dur * RULES.skipAfter;
+}
+function skipWave() { if (canSkip()) startWave(G.wave + 1); }
+
+function addEnemy(type, d = 0) {
+  const def = ENEMIES[type], p = pointAt(G.path, d);
+  const e = { id: ++G.uid, type, def, hp: def.hp, maxHp: def.hp, d, rooted: 0, x: p.x, y: p.y, dir: 1, hitFlash: 0,
+    sumT: def.summon ? def.summon.every : 0, axeT: def.axe ? def.axe.every : 0,
+    stompT: def.stomp ? def.stomp.every : 0, callT: def.bossCall ? def.bossCall.every : 0 };
+  G.pending.push(e); // попадут в G.enemies после текущего шага, чтобы не ломать перебор
+  if (def.roar) {
+    for (const t of G.towers) if (dist(t.x, t.y, e.x, e.y) <= def.roar.r) t.stunT = Math.max(t.stunT, def.roar.t);
+    fx({ kind: "ring", x: e.x, y: e.y, r: def.roar.r, color: "#c060ff", t: 0, life: 1 });
+    banner(`${def.name} пробуждается!`, true);
+  }
+  return e;
+}
+const spawnEnemy = (type) => addEnemy(type, 0);
+function flushPending() { if (G.pending.length) { G.enemies.push(...G.pending); G.pending.length = 0; } }
+function pickWeighted(list) {
+  let r = Math.random() * list.reduce((s, [, w]) => s + w, 0);
+  for (const [k, w] of list) if ((r -= w) < 0) return k;
+  return list[list.length - 1][0];
+}
+
+function towerStats(t) { return TOWERS[t.type].levels[t.level - 1]; }
+function seesHidden(t) { const h = TOWERS[t.type].hiddenFrom; return h > 0 && t.level >= h; }
+const ETHER_SLOW = 1.5; // во столько раз медленнее атакуют башни под эфиром
+
+// ============================================================ ЛОГИКА БОЯ
+function update(dt) {
+  if (!G || G.over) return;
+  G.time += dt;
+  G.waveTime += dt;
+
+  // появление врагов; объект {pause} в очереди — пауза перед следующей группой
+  G.spawnTimer -= dt;
+  if (G.queue.length && G.spawnTimer <= 0) {
+    const it = G.queue.shift();
+    if (typeof it === "object") G.spawnTimer = it.pause;
+    else {
+      spawnEnemy(it); G.spawnTimer = RULES.spawnInterval;
+      if (typeof G.queue[0] === "object") G.spawnTimer = G.queue.shift().pause;
+    }
+  }
+
+  // смена волны по времени
+  const last = WAVES.length - 1;
+  if (G.wave < last && G.waveTime >= WAVES[G.wave].dur) startWave(G.wave + 1);
+
+  // враги идут
+  flushPending();
+  for (const e of G.enemies) {
+    if (e.hp <= 0) continue;
+    if (e.rooted > 0) e.rooted -= dt; else e.d += e.def.speed * dt;
+    if (e.hitFlash > 0) e.hitFlash -= dt;
+    const p = pointAt(G.path, e.d); e.x = p.x; e.y = p.y; if (p.dx) e.dir = p.dx;
+    if (e.d >= G.path.total) {
+      const lost = Math.ceil(e.hp); G.hp -= lost; e.hp = 0; e.reached = true;
+      fxText(Math.min(e.x, COLS - 12), e.y - 4, `-${lost}`);
+      fx({ kind: "hurt", x: e.x, y: e.y, t: 0, life: 0.4 });
+      continue;
+    }
+    enemyAbilities(e, dt);
+  }
+  G.enemies = G.enemies.filter((e) => e.hp > 0);
+  if (G.hp <= 0) { G.hp = 0; endGame(false); return; }
+
+  updateUnits(dt);
+  for (const t of G.towers) towerUpdate(t, dt);
+
+  // снаряды
+  for (const s of G.shots) {
+    s.t += dt;
+    if (s.kind === "bomb") {
+      if (s.t >= s.flight) { s.done = true; explode(s); }
+      continue;
+    }
+    const e = s.target;
+    if (!e || e.hp <= 0) { s.done = true; continue; }
+    const dx = e.x - s.x, dy = e.y - s.y, l = Math.hypot(dx, dy), step = s.speed * dt;
+    if (l <= step) { s.done = true; hitShot(s, e); }
+    else { s.x += dx / l * step; s.y += dy / l * step; s.ang = Math.atan2(dy, dx); }
+  }
+  G.shots = G.shots.filter((s) => !s.done);
+
+  for (const f of G.fx) f.t += dt;
+  G.fx = G.fx.filter((f) => f.t < f.life);
+  flushPending();
+
+  // победа: последняя волна, всё вышло и все мертвы
+  if (G.wave === last && !G.queue.length && !G.enemies.some((e) => e.hp > 0)) endGame(true);
+}
+
+function enemyAbilities(e, dt) {
+  const d = e.def;
+  if (d.summon && (e.sumT -= dt) <= 0) {
+    e.sumT = d.summon.every;
+    const n = irnd(d.summon.min, d.summon.max);
+    for (let i = 0; i < n; i++) addEnemy(d.summon.type, Math.max(0, e.d - 1.5 - i * 1.5));
+    fx({ kind: "ring", x: e.x, y: e.y - 2, r: 4, color: "#9a4fd0", t: 0, life: 0.5 });
+  }
+  if (d.axe && (e.axeT -= dt) <= 0) {
+    e.axeT = d.axe.every;
+    for (const t of G.towers) if (dist(t.x, t.y, e.x, e.y) <= d.axe.r) t.bleedT = Math.max(t.bleedT, d.axe.t);
+    fx({ kind: "ring", x: e.x, y: e.y, r: d.axe.r, color: "#e0303a", t: 0, life: 0.45 });
+  }
+  if (d.stomp && (e.stompT -= dt) <= 0) {
+    e.stompT = d.stomp.every;
+    for (const t of G.towers) if (!t.onCliff && dist(t.x, t.y, e.x, e.y) <= d.stomp.r) t.stunT = Math.max(t.stunT, d.stomp.t);
+    fx({ kind: "ring", x: e.x, y: e.y, r: d.stomp.r, color: "#ffe060", t: 0, life: 0.5 });
+  }
+  if (d.bossCall && (e.callT -= dt) <= 0) {
+    e.callT = d.bossCall.every;
+    const n = irnd(d.bossCall.min, d.bossCall.max);
+    for (let i = 0; i < n; i++) addEnemy(d.bossCall.types[irnd(0, d.bossCall.types.length - 1)], Math.max(0, e.d - 2 - i * 3));
+    fx({ kind: "ring", x: e.x, y: e.y, r: 10, color: "#c060ff", t: 0, life: 0.6 });
+    banner(`${d.name} призывает боссов!`, true);
+  }
+}
+
+function findTargetAt(x, y, range, sees, priority) {
+  let best = null, bestScore = -Infinity;
+  for (const e of G.enemies) {
+    if (e.hp <= 0) continue;
+    if (e.def.hidden && !sees) continue;
+    const dd = dist(x, y, e.x, e.y);
+    if (dd > range) continue;
+    let score;
+    switch (priority) {
+      case "last": score = -e.d; break;
+      case "strong": score = e.hp * 1000 + e.d; break;
+      case "close": score = -dd; break;
+      default: score = e.d; // первый
+    }
+    if (score > bestScore) { bestScore = score; best = e; }
+  }
+  return best;
+}
+const findTarget = (t, range) => findTargetAt(t.x, t.y, range, seesHidden(t), t.priority);
+
+function towerUpdate(t, dt) {
+  const def = TOWERS[t.type], st = towerStats(t);
+  if (t.stunT > 0) t.stunT -= dt;
+  if (t.bleedT > 0) t.bleedT -= dt;
+  if (t.slowT > 0) t.slowT -= dt;
+  if (t.anim > 0) t.anim -= dt;
+  if (def.kind === "farm" || t.stunT > 0 || t.bleedT > 0) return; // оглушение и кровотечение останавливают башню
+  const tick = t.slowT > 0 ? dt / ETHER_SLOW : dt;
+  t.cd -= tick;
+
+  if (def.kind === "spawner") {
+    if (t.cd <= 0) { spawnUnit(t); t.cd = def.every; }
+    return;
+  }
+  if (def.kind === "burst") {
+    if (t.burstLeft > 0) {
+      t.burstTimer -= tick;
+      if (t.burstTimer <= 0) {
+        const e = findTarget(t, st.range);
+        if (e) fireProj(t, e, st.dmg);
+        t.burstLeft--; t.burstTimer = st.between;
+        if (t.burstLeft === 0) t.cd = st.rate;
+      }
+      return;
+    }
+    if (t.cd <= 0) {
+      const e = findTarget(t, st.range);
+      if (e) { t.burstLeft = st.burst; t.burstTimer = 0; }
+    }
+    return;
+  }
+
+  if (t.cd > 0) return;
+  const e = findTarget(t, st.range);
+  if (!e) return;
+  t.cd = st.rate; t.anim = 0.15; t.dir = e.x >= t.x ? 1 : -1;
+
+  if (def.kind === "proj") fireProj(t, e, st.dmg);
+  else if (def.kind === "fireball") fireProj(t, e, st.dmg, { splashDmg: st.splashDmg, splash: st.splash });
+  else if (def.kind === "bomb") {
+    const flight = 0.55;
+    const p = pointAt(G.path, e.rooted > 0 ? e.d : Math.min(G.path.total, e.d + e.def.speed * flight));
+    G.shots.push({ kind: "bomb", sx: t.x, sy: t.y - 3, x: p.x, y: p.y, t: 0, flight, dmg: st.dmg, splash: st.splash });
+  } else if (def.kind === "arc") {
+    // прямой урон главной цели + урон дуги до N соседям; если соседей нет — цели оба урона
+    const near = G.enemies
+      .filter((o) => o !== e && o.hp > 0 && dist(o.x, o.y, e.x, e.y) <= st.arcR)
+      .sort((a, b) => dist(a.x, a.y, e.x, e.y) - dist(b.x, b.y, e.x, e.y))
+      .slice(0, st.extra);
+    damage(e, st.dmg);
+    if (near.length) for (const o of near) damage(o, st.arcDmg);
+    else damage(e, st.arcDmg);
+    fx({ kind: "slash", x: e.x, y: e.y, r: Math.max(1.5, near.length ? st.arcR : 1.5), from: [t.x, t.y], t: 0, life: 0.22 });
+  } else if (def.kind === "vine") {
+    // лианы: цель и все в радиусе области; захват не продлевается, пока не кончится
+    const hit = G.enemies.filter((o) => o.hp > 0 && (o === e || dist(o.x, o.y, e.x, e.y) <= st.splash));
+    for (const o of hit) {
+      if (st.dmg) damage(o, st.dmg);
+      const k = o.def.rootMult ?? 1;
+      if (o.rooted <= 0 && k > 0) o.rooted = st.root * k;
+    }
+    fx({ kind: "vine", x: e.x, y: e.y, r: st.splash, t: 0, life: 0.35 });
+  }
+}
+
+function fireProj(t, e, dmg, extra) {
+  const def = TOWERS[t.type];
+  t.anim = 0.12; t.dir = e.x >= t.x ? 1 : -1;
+  G.shots.push({ kind: def.proj, x: t.x + t.dir * 2, y: t.y - 3, target: e, dmg, speed: def.projSpeed, t: 0, ang: Math.atan2(e.y - t.y, e.x - t.x), ...extra });
+}
+// попадание снаряда: прямой урон, а у огненного шара и гранаты ещё и взрыв вокруг цели
+function hitShot(s, e) {
+  const x = e.x, y = e.y;
+  damage(e, s.dmg);
+  if (s.splashDmg) explode({ x, y, splash: s.splash, dmg: s.splashDmg, color: s.kind === "fire" ? "#ff6a20" : undefined });
+}
+function explode(s) {
+  // взрыв задевает и скрытых
+  for (const e of G.enemies) if (e.hp > 0 && dist(e.x, e.y, s.x, s.y) <= s.splash) damage(e, s.dmg);
+  fx({ kind: "boom", x: s.x, y: s.y, r: s.splash, color: s.color, t: 0, life: 0.3 });
+}
+function damage(e, amount) {
+  if (amount <= 0 || e.hp <= 0) return;
+  G.souls += Math.round(Math.min(amount, e.hp) * RULES.soulsPerDamage);
+  e.hp -= amount; e.hitFlash = 0.08;
+  if (e.hp <= 0) onDeath(e);
+}
+function onDeath(e) {
+  const d = e.def;
+  fx({ kind: "poof", x: e.x, y: e.y, big: !!d.boss, t: 0, life: 0.35 });
+  const first = !PROFILE.killed[e.type];
+  PROFILE.killed[e.type] = (PROFILE.killed[e.type] || 0) + 1;
+  if (first) { saveProfile(); banner(`Новый враг в Альманахе: ${d.name}`); }
+  if (d.deathPick) addEnemy(pickWeighted(d.deathPick), e.d);
+  if (d.deathSpawn) {
+    const n = irnd(d.deathSpawn.min, d.deathSpawn.max);
+    for (let i = 0; i < n; i++) addEnemy(d.deathSpawn.type, Math.max(0, e.d - i * 1.2));
+  }
+  if (d.deathAura) {
+    for (const t of G.towers) if (dist(t.x, t.y, e.x, e.y) <= d.deathAura.r) t.slowT = Math.max(t.slowT, d.deathAura.t);
+    fx({ kind: "ring", x: e.x, y: e.y, r: d.deathAura.r, color: "#8ad8ff", t: 0, life: 0.5 });
+  }
+}
+function fx(f) { G.fx.push(f); }
+function fxText(x, y, text, color) { fx({ kind: "text", x, y, text, color, t: 0, life: 0.8 }); }
+
+// ============================================================ ЮНИТЫ СПАВНЕРОВ
+// Едут от базы к порталу. При касании враг теряет HP, равное HP юнита, а юнит — оставшееся HP врага.
+function spawnUnit(t) {
+  const st = towerStats(t), p = pointAt(G.path, G.path.total);
+  G.units.push({ id: ++G.uid, tower: t, cfg: st, kind: st.unit, hp: st.hp, maxHp: st.hp, d: G.path.total, x: p.x, y: p.y, dir: -1, gunCd: 0, grenCd: 0.5, walk: 0 });
+  t.anim = 0.2;
+}
+function updateUnits(dt) {
+  for (const u of G.units) {
+    u.d -= u.cfg.speed * dt; u.walk += dt;
+    if (u.d <= 0) { u.gone = true; continue; } // доехал до портала и пропал
+    const p = pointAt(G.path, u.d); u.x = p.x; u.y = p.y; if (p.dx) u.dir = -p.dx;
+    for (const e of G.enemies) {
+      if (e.hp <= 0 || dist(e.x, e.y, u.x, u.y) > (e.def.boss ? 3 : 2)) continue;
+      const eh = e.hp;
+      damage(e, u.hp); u.hp -= eh;
+      if (u.hp <= 0) break;
+    }
+    if (u.hp <= 0) {
+      u.gone = true;
+      if (u.cfg.boom) explode({ x: u.x, y: u.y, splash: u.cfg.boom.r, dmg: u.cfg.boom.dmg });
+      else fx({ kind: "poof", x: u.x, y: u.y, t: 0, life: 0.35 });
+      continue;
+    }
+    // стрелки скрытых не видят
+    const g = u.cfg.gun;
+    if (g && (u.gunCd -= dt) <= 0) {
+      const e = findTargetAt(u.x, u.y, g.range, false, "first");
+      if (e) { u.gunCd = g.rate; G.shots.push({ kind: "arrow", x: u.x, y: u.y - 3, target: e, dmg: g.dmg, speed: 45, t: 0, ang: Math.atan2(e.y - u.y, e.x - u.x) }); }
+    }
+    const gr = u.cfg.grenade;
+    if (gr && (u.grenCd -= dt) <= 0) {
+      const e = findTargetAt(u.x, u.y, gr.range, false, "first");
+      if (e) { u.grenCd = gr.rate; G.shots.push({ kind: "grenade", x: u.x, y: u.y - 4, target: e, dmg: gr.dmg, splashDmg: gr.splashDmg, splash: gr.r, speed: 28, t: 0, ang: 0 }); }
+    }
+  }
+  G.units = G.units.filter((u) => !u.gone);
+}
+
+function endGame(victory) {
+  if (G.over) return;
+  G.over = true; placing = null; selected = null;
+  $("tpanel").hidden = true;
+  const reached = victory ? WAVES.length : G.wave; // до какой волны дошёл
+  const tier = RULES.coinTiers.find(([n]) => reached > n);
+  const reward = tier ? tier[1] : 0;
+  PROFILE.coins += reward;
+  const coinsLine = reward ? `+${reward} монет (всего ${PROFILE.coins}).` : "Монеты дают, если пройти дальше 5-й волны.";
+  if (victory) {
+    PROFILE.wins++;
+    $("endTitle").textContent = "Победа!";
+    $("endTitle").style.color = "var(--gold)";
+    $("endText").textContent = `${coinsLine} Остальные волны в разработке.`;
+  } else {
+    $("endTitle").textContent = "База пала";
+    $("endTitle").style.color = "var(--hp)";
+    $("endText").textContent = `Ты дошёл до волны ${G.wave} из ${WAVES.length - 1}. ${coinsLine}`;
+  }
+  saveProfile();
+  $("endScreen").hidden = false;
+}
+
+// ============================================================ ПОСТРОЙКА
+function placeCheck(type, x, y) {
+  if (!G || G.over) return "Бой окончен";
+  const def = TOWERS[type];
+  if (G.towers.length >= RULES.towerLimit) return `Лимит ${RULES.towerLimit} башен`;
+  if (def.limit && G.towers.filter((t) => t.type === type).length >= def.limit) return `${def.name}: не больше ${def.limit}`;
+  if (G.souls < def.levels[0].cost) return "Не хватает душ";
+  if (x < 3 || y < 5 || x > COLS - 3 || y > ROWS - 1.5) return "Слишком близко к краю";
+  if (distToPath(G.path, x, y) < 5.5) return "Нельзя на дорогу";
+  const end = G.path.points[G.path.points.length - 1];
+  if (dist(x, y, baseX(end), end[1]) < 9) return "Тут база";
+  for (const o of G.decor) if (dist(o.x, o.y, x, y) < o.r + 2.5) return "Мешает декор";
+  const onCliff = G.cliffs.some((c) => x >= c.x + 2 && x <= c.x + c.w - 2 && y >= c.y + 3 && y <= c.y + c.h);
+  const nearCliff = G.cliffs.some((c) => x > c.x - 2 && x < c.x + c.w + 2 && y > c.y - 1 && y < c.y + c.h + 4);
+  if (def.place === "cliff") { if (!onCliff) return "Только на возвышенность"; }
+  else if (nearCliff) return "Только на землю";
+  for (const t of G.towers) if (dist(t.x, t.y, x, y) < 4.5) return "Слишком близко к башне";
+  return null;
+}
+function placeTower(type, x, y) {
+  const err = placeCheck(type, x, y);
+  if (err) { banner(err, true); return false; }
+  const def = TOWERS[type], cost = def.levels[0].cost;
+  G.souls -= cost;
+  G.towers.push({ id: ++G.uid, type, x, y, level: 1, spent: cost, cd: def.kind === "spawner" ? 0 : 0.2, anim: 0, dir: 1, priority: "first",
+    burstLeft: 0, burstTimer: 0, stunT: 0, bleedT: 0, slowT: 0, onCliff: def.place === "cliff", placedWave: G.wave });
+  renderBar(); updateHud();
+  return true;
+}
+function upgrade(t) {
+  const def = TOWERS[t.type], next = def.levels[t.level];
+  if (!next || G.souls < next.cost) return;
+  if (t.bleedT > 0) { banner("Кровотечение: улучшать нельзя", true); return; }
+  G.souls -= next.cost; t.spent += next.cost; t.level++;
+  if (def.kind === "spawner" && t.level >= 4) t.cd = 0; // новая машина выезжает сразу
+  fx({ kind: "lvl", x: t.x, y: t.y, t: 0, life: 0.5 });
+  updatePanel(); renderBar(); updateHud();
+}
+function sell(t) {
+  const refund = Math.floor(t.spent * RULES.sellRefund);
+  G.souls += refund;
+  G.towers = G.towers.filter((o) => o !== t);
+  G.units = G.units.filter((u) => u.tower !== t);
+  fx({ kind: "poof", x: t.x, y: t.y, t: 0, life: 0.35 });
+  selected = null; updatePanel(); renderBar(); updateHud();
+}
+
+// ============================================================ ОТРИСОВКА
+function draw() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#12101a"; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (!G) return;
+  ctx.setTransform(zoom, 0, 0, zoom, -cam.x * zoom, -cam.y * zoom);
+  ctx.drawImage(G.bg, 0, 0);
+  const end = G.path.points[G.path.points.length - 1];
+  drawBase(ctx, baseX(end) * CELL, end[1] * CELL);
+
+  // радиус выбранной башни
+  if (selected && towerStats(selected).range) ring(selected.x, selected.y, towerStats(selected).range, "rgba(127,224,208,.12)", "rgba(127,224,208,.7)");
+
+  // объекты сверху вниз по Y
+  const items = [];
+  for (const t of G.towers) items.push({ y: t.y, f: () => drawTower(t) });
+  for (const e of G.enemies) items.push({ y: e.y, f: () => drawEnemy(e) });
+  for (const u of G.units) items.push({ y: u.y + 0.1, f: () => drawUnit(u) });
+  items.push({ y: G.player.y, f: drawPlayer });
+  items.sort((a, b) => a.y - b.y);
+  for (const it of items) it.f();
+
+  for (const s of G.shots) drawShot(s);
+  for (const f of G.fx) drawFx(f);
+
+  // призрак при постройке
+  if (placing && mouse.in) {
+    const ok = !placeCheck(placing, mouse.x, mouse.y);
+    ring(mouse.x, mouse.y, TOWERS[placing].levels[0].range || 2.5, ok ? "rgba(95,191,90,.15)" : "rgba(196,74,74,.15)", ok ? "rgba(95,191,90,.8)" : "rgba(196,74,74,.8)");
+    ctx.globalAlpha = 0.7;
+    ctx.drawImage(SPR[placing], Math.round(mouse.x * CELL - 8), Math.round(mouse.y * CELL - 14));
+    ctx.globalAlpha = 1;
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+function ring(x, y, r, fill, stroke) {
+  ctx.beginPath(); ctx.arc(x * CELL, y * CELL, r * CELL, 0, Math.PI * 2);
+  ctx.fillStyle = fill; ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = stroke; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+}
+function drawTower(t) {
+  const spr = SPR[t.dir < 0 ? t.type + "_L" : t.type];
+  const bob = t.anim > 0 ? -1 : 0;
+  const x = Math.round(t.x * CELL - 8), y = Math.round(t.y * CELL - 14 + bob);
+  ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.fillRect(Math.round(t.x * CELL - 6), Math.round(t.y * CELL + 1), 12, 2);
+  ctx.drawImage(spr, x, y);
+  // эфир — голубая дымка
+  if (t.slowT > 0) { ctx.globalAlpha = 0.35; ctx.fillStyle = "#8ad8ff"; ctx.fillRect(x + 3, y + 2, 10, 13); ctx.globalAlpha = 1; }
+  // уровни — точки под башней
+  for (let i = 0; i < t.level; i++) {
+    ctx.fillStyle = i === 4 ? "#e8c14a" : "#ece6d6";
+    ctx.fillRect(Math.round(t.x * CELL - 5 + i * 2.5), Math.round(t.y * CELL + 3), 2, 2);
+  }
+  // оглушение — звёздочки над головой, кровотечение — капли
+  if (t.stunT > 0) {
+    ctx.fillStyle = "#ffe060";
+    for (let i = 0; i < 3; i++) { const a = G.time * 5 + i * 2.1; ctx.fillRect(Math.round(t.x * CELL + Math.cos(a) * 5), Math.round(t.y * CELL - 17 + Math.sin(a) * 1.5), 2, 2); }
+  }
+  if (t.bleedT > 0) {
+    ctx.fillStyle = "#e0303a";
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + 4 + i * 4, y + 3 + Math.floor((G.time * 8 + i * 3) % 9), 1, 2);
+  }
+  if (t === selected) { ctx.strokeStyle = "#e8c14a"; ctx.lineWidth = 1; ctx.strokeRect(Math.round(t.x * CELL - 9) + .5, Math.round(t.y * CELL - 15) + .5, 18, 21); }
+}
+function hpBar(cx, top, bw, frac, color) {
+  const bx = Math.round(cx - bw / 2), by = Math.round(top);
+  ctx.fillStyle = "#16121e"; ctx.fillRect(bx - 1, by - 1, bw + 2, 3);
+  ctx.fillStyle = color; ctx.fillRect(bx, by, Math.max(1, Math.round(bw * Math.max(0, frac))), 1);
+}
+function drawEnemy(e) {
+  const big = e.def.boss;
+  const spr = SPR[e.dir < 0 ? e.type + "_L" : e.type];
+  const w = spr.width, h = spr.height;
+  const step = e.rooted > 0 ? 0 : (Math.floor(G.time * 6 + e.id) % 2);
+  const x = Math.round(e.x * CELL - w / 2), y = Math.round(e.y * CELL - h + 3 - step);
+  ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.fillRect(Math.round(e.x * CELL - w / 3), Math.round(e.y * CELL + 2), Math.round(w * 2 / 3), 2);
+  ctx.globalAlpha = e.def.hidden ? 0.55 : 1;
+  ctx.drawImage(spr, x, y);
+  if (e.hitFlash > 0) { ctx.globalAlpha = 0.5; ctx.fillStyle = "#fff"; ctx.fillRect(x + 2, y + 2, w - 4, h - 4); }
+  ctx.globalAlpha = 1;
+  if (e.rooted > 0) { // лианы
+    ctx.fillStyle = "#3f9a3a";
+    ctx.fillRect(x + 1, y + h - 5, w - 2, 2); ctx.fillRect(x + 2, y + h - 8, 1, 4); ctx.fillRect(x + w - 3, y + h - 7, 1, 3);
+    ctx.fillStyle = "#79c95b"; ctx.fillRect(x + 3, y + h - 6, 2, 1);
+  }
+  hpBar(e.x * CELL, y - 3, big ? Math.max(20, w) : 10, e.hp / e.maxHp, big ? "#e0525a" : "#5fbf5a");
+}
+function drawUnit(u) {
+  const spr = SPR[u.dir < 0 ? u.kind + "_L" : u.kind];
+  const w = spr.width, h = spr.height, bob = Math.floor(u.walk * 6) % 2;
+  const x = Math.round(u.x * CELL - w / 2), y = Math.round(u.y * CELL - h + 3 - bob);
+  ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.fillRect(Math.round(u.x * CELL - w / 3), Math.round(u.y * CELL + 2), Math.round(w * 2 / 3), 2);
+  ctx.drawImage(spr, x, y);
+  hpBar(u.x * CELL, y - 3, 12, u.hp / u.maxHp, "#5a9ae8");
+}
+function drawShot(s) {
+  if (s.kind === "bomb") {
+    const k = Math.min(1, s.t / s.flight);
+    const x = s.sx + (s.x - s.sx) * k, y = s.sy + (s.y - s.sy) * k - Math.sin(k * Math.PI) * 10;
+    ctx.fillStyle = "#16121e"; ctx.fillRect(Math.round(x * CELL - 2), Math.round(y * CELL - 2), 4, 4);
+    ctx.fillStyle = "#ffd060"; ctx.fillRect(Math.round(x * CELL + 1), Math.round(y * CELL - 3), 1, 1);
+    return;
+  }
+  const x = s.x * CELL, y = s.y * CELL, c = Math.cos(s.ang), sn = Math.sin(s.ang);
+  if (s.kind === "stone") { ctx.fillStyle = "#c8c8d0"; ctx.fillRect(Math.round(x - 1), Math.round(y - 1), 2, 2); }
+  else if (s.kind === "arrow") {
+    ctx.strokeStyle = "#e8d8b0"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - c * 5, y - sn * 5); ctx.lineTo(x, y); ctx.stroke();
+    ctx.fillStyle = "#c8c8d0"; ctx.fillRect(Math.round(x - .5), Math.round(y - .5), 1, 1);
+  } else if (s.kind === "needle") {
+    ctx.strokeStyle = "#d8d0e8"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - c * 3, y - sn * 3); ctx.lineTo(x, y); ctx.stroke();
+  } else if (s.kind === "fire") {
+    ctx.fillStyle = "#c03a1a"; ctx.fillRect(Math.round(x - c * 4 - 1), Math.round(y - sn * 4 - 1), 2, 2);
+    ctx.fillStyle = "#ff8a30"; ctx.fillRect(Math.round(x - 2), Math.round(y - 2), 4, 4);
+    ctx.fillStyle = "#fff060"; ctx.fillRect(Math.round(x - 1), Math.round(y - 1), 2, 2);
+  } else if (s.kind === "grenade") {
+    ctx.fillStyle = "#22202a"; ctx.fillRect(Math.round(x - 1.5), Math.round(y - 1.5), 3, 3);
+    ctx.fillStyle = "#ffd060"; ctx.fillRect(Math.round(x), Math.round(y - 2), 1, 1);
+  }
+}
+function drawFx(f) {
+  const k = f.t / f.life;
+  if (f.kind === "boom") {
+    ctx.globalAlpha = 1 - k;
+    ctx.fillStyle = f.color || "#ffb040"; ctx.beginPath(); ctx.arc(f.x * CELL, f.y * CELL, f.r * CELL * (0.4 + 0.6 * k), 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fff0b0"; ctx.beginPath(); ctx.arc(f.x * CELL, f.y * CELL, f.r * CELL * 0.35 * (1 - k), 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  } else if (f.kind === "ring") {
+    ctx.globalAlpha = 1 - k; ctx.strokeStyle = f.color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(f.x * CELL, f.y * CELL, f.r * CELL * (0.2 + 0.8 * k), 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+  } else if (f.kind === "slash") {
+    const a = Math.atan2(f.y - f.from[1], f.x - f.from[0]);
+    ctx.globalAlpha = 1 - k; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(f.from[0] * CELL, f.from[1] * CELL - 6, dist(f.x, f.y, f.from[0], f.from[1]) * CELL, a - 0.5, a + 0.5); ctx.stroke();
+    ctx.strokeStyle = "#e6ecf4"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(f.x * CELL, f.y * CELL - 4, f.r * CELL * 0.8, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (f.kind === "vine") {
+    ctx.globalAlpha = 1 - k; ctx.strokeStyle = "#5fbf5a"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(f.x * CELL, f.y * CELL, Math.max(6, f.r * CELL) * (0.5 + 0.5 * k), 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+  } else if (f.kind === "poof") {
+    const n = f.big ? 10 : 6;
+    ctx.fillStyle = `rgba(127,224,208,${1 - k})`;
+    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, r = (f.big ? 14 : 7) * k; ctx.fillRect(Math.round(f.x * CELL + Math.cos(a) * r), Math.round(f.y * CELL - 4 + Math.sin(a) * r), 2, 2); }
+  } else if (f.kind === "lvl") {
+    ctx.fillStyle = `rgba(232,193,74,${1 - k})`;
+    ctx.fillRect(Math.round(f.x * CELL - 8), Math.round(f.y * CELL - 16 - k * 6), 16, 2);
+  } else if (f.kind === "hurt") {
+    ctx.fillStyle = `rgba(224,82,90,${0.5 * (1 - k)})`; ctx.fillRect(0, 0, COLS * CELL, ROWS * CELL);
+  } else if (f.kind === "text") {
+    ctx.globalAlpha = 1 - k; ctx.fillStyle = f.color || "#e0525a"; ctx.font = "8px 'Press Start 2P', monospace";
+    ctx.fillText(f.text, f.x * CELL, f.y * CELL - k * 8); ctx.globalAlpha = 1;
+  }
+}
+
+// ============================================================ ИНТЕРФЕЙС БОЯ
+let bannerTimer = 0;
+function banner(text, bad) {
+  const b = $("banner"); b.textContent = text; b.style.color = bad ? "var(--hp)" : "var(--fg)";
+  b.classList.add("show"); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.classList.remove("show"), 1600);
+}
+const fmtTime = (s) => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const fmtNum = (n) => (Math.round(n * 1000) / 1000).toString();
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function updateHud() {
+  if (!G) return;
+  const last = WAVES.length - 1;
+  $("sWave").textContent = `Волна ${G.wave}/${last}`;
+  $("sTime").textContent = paused ? "Пауза" : G.wave < last ? `След.: ${fmtTime(WAVES[G.wave].dur - G.waveTime)}` : "Последняя";
+  $("sHp").textContent = `♥ ${Math.max(0, G.hp)}`;
+  $("sSouls").textContent = `◆ ${G.souls}`;
+  $("sCount").textContent = `Башни ${G.towers.length}/${RULES.towerLimit}`;
+  $("bSkip").disabled = !canSkip();
+  $("bSpeed").textContent = `x${speed}`;
+  $("bZoom").textContent = `Камера x${zoom}`;
+}
+
+// В бою доступны только башни из экипировки (до 5 слотов)
+function renderBar() {
+  const bar = $("bar");
+  if (!G) return;
+  if (bar.dataset.for !== G.loadout.join()) {
+    bar.innerHTML = ""; bar.dataset.for = G.loadout.join();
+    G.loadout.forEach((id, i) => {
+      const b = document.createElement("button"); b.className = "tcard"; b.id = "card-" + id;
+      const nm = document.createElement("span"); nm.className = "nm"; nm.innerHTML = `<span class="key">${i + 1}</span> ${TOWERS[id].name}`;
+      const cs = document.createElement("span"); cs.className = "cs"; cs.textContent = `◆ ${TOWERS[id].levels[0].cost}`;
+      b.append(towerIcon(id), nm, cs); b.title = TOWERS[id].info;
+      b.addEventListener("click", () => togglePlacing(id));
+      bar.append(b);
+    });
+  }
+  for (const id of G.loadout) {
+    const b = $("card-" + id);
+    const cant = G.over || G.souls < TOWERS[id].levels[0].cost || G.towers.length >= RULES.towerLimit;
+    b.disabled = cant && placing !== id;
+    b.classList.toggle("sel", placing === id);
+  }
+}
+function togglePlacing(id) {
+  if (!G || G.over) return;
+  placing = placing === id ? null : id;
+  if (placing) { selected = null; updatePanel(); }
+  renderBar();
+}
+
+const PRIORITIES = [["first", "Первый"], ["last", "Последний"], ["strong", "Сильный"], ["close", "Ближний"]];
+const sec = (v) => fmtNum(v) + " с";
+// Статы по типам башен: [подпись, ключ или функция от уровня, формат]
+const STAT_COLS = {
+  proj: [["Урон", "dmg"], ["Атака раз в", "rate", sec], ["Дальность", "range"]],
+  bomb: [["Урон", "dmg"], ["Радиус взрыва", "splash"], ["Атака раз в", "rate", sec], ["Дальность", "range"]],
+  arc: [["Урон", "dmg"], ["Урон дуги", "arcDmg"], ["Целей дугой", "extra"], ["Радиус дуги", "arcR"], ["Атака раз в", "rate", sec], ["Дальность", "range"]],
+  vine: [["Урон", "dmg"], ["Удержание", "root", sec], ["Область", "splash"], ["Атака раз в", "rate", sec], ["Дальность", "range"]],
+  burst: [["Урон", "dmg"], ["Игл в очереди", "burst"], ["Перезарядка", "rate", sec], ["Дальность", "range"]],
+  fireball: [["Прямой урон", "dmg"], ["Урон взрыва", "splashDmg"], ["Радиус взрыва", "splash"], ["Атака раз в", "rate", sec], ["Дальность", "range"]],
+  farm: [["Душ за волну", "income"]],
+  spawner: [["Юнит", (l) => UNITS[l.unit], String], ["HP юнита", "hp"], ["Скорость", "speed"],
+    ["Взрыв при гибели", (l) => (l.boom ? `${l.boom.dmg}, радиус ${fmtNum(l.boom.r)}` : "—"), String],
+    ["Лучники", (l) => (l.gun ? `${l.gun.dmg} раз в ${fmtNum(l.gun.rate)} с` : "—"), String],
+    ["Гранатчик", (l) => (l.grenade ? `${l.grenade.dmg} + ${l.grenade.splashDmg} взрыв` : "—"), String]],
+};
+const statVal = (col, lv) => (typeof col[1] === "function" ? col[1](lv) : lv[col[1]]);
+const statText = (col, lv) => { const v = statVal(col, lv); return v === undefined ? "—" : (col[2] || fmtNum)(v); };
+function hiddenText(def, level) {
+  if (def.kind === "farm") return "не атакует";
+  if (def.kind === "spawner") return "таранит всех, стрелки — нет";
+  if (!def.hiddenFrom) return "нет";
+  return level >= def.hiddenFrom ? "да" : `с ${def.hiddenFrom} ур.`;
+}
+function updatePanel() {
+  const p = $("tpanel");
+  if (!selected || !G || G.over) { p.hidden = true; return; }
+  const t = selected, def = TOWERS[t.type], st = towerStats(t), nx = def.levels[t.level];
+  let rows = "";
+  for (const col of STAT_COLS[def.kind]) {
+    const cs = statText(col, st), ns = nx ? statText(col, nx) : cs;
+    rows += `<span>${col[0]}</span><span>${cs}${ns !== cs ? ` <span class="next">→ ${ns}</span>` : ""}</span>`;
+  }
+  if (def.kind === "spawner") rows += `<span>Новый юнит</span><span>раз в ${def.every} с</span>`;
+  rows += `<span>Видит скрытых</span><span>${hiddenText(def, t.level)}</span>`;
+  const shooter = def.kind !== "farm" && def.kind !== "spawner";
+
+  p.innerHTML = `
+    <button class="pbtn close" id="pClose" aria-label="Закрыть">✕</button>
+    <h3>${def.name}<br>Уровень ${t.level}/5</h3>
+    <div class="rows">${rows}</div>
+    ${shooter ? `<div class="targets">${PRIORITIES.map(([k, n]) => `<button class="pbtn ${t.priority === k ? "on" : ""}" data-p="${k}">${n}</button>`).join("")}</div>` : ""}
+    <div class="btns">
+      <button class="pbtn" id="pUp" ${!nx || G.souls < nx.cost || t.bleedT > 0 ? "disabled" : ""}>${nx ? `Улучшить ◆${nx.cost}` : "Макс. уровень"}</button>
+      <button class="pbtn" id="pSell">Продать ◆${Math.floor(t.spent * RULES.sellRefund)}</button>
+    </div>`;
+  p.hidden = false;
+  $("pClose").onclick = () => { selected = null; updatePanel(); };
+  $("pUp").onclick = () => upgrade(t);
+  $("pSell").onclick = () => sell(t);
+  p.querySelectorAll("[data-p]").forEach((b) => b.onclick = () => { t.priority = b.dataset.p; updatePanel(); });
+}
+
+// ============================================================ ПЕРСОНАЖ, КАМЕРА, ЧАТ
+const PLAYER_SPEED = 16; // стадов в секунду, как WalkSpeed в Roblox
+const keys = {};
+let zoom = 2;
+const cam = { x: 0, y: 0 };
+
+function updatePlayer(dt) {
+  const P = G.player;
+  let dx = 0, dy = 0;
+  if (keys.left) dx--; if (keys.right) dx++; if (keys.up) dy--; if (keys.down) dy++;
+  P.moving = !!(dx || dy);
+  if (P.moving) {
+    const l = Math.hypot(dx, dy);
+    P.x = clamp(P.x + dx / l * PLAYER_SPEED * dt, 2, COLS - 2);
+    P.y = clamp(P.y + dy / l * PLAYER_SPEED * dt, 5, ROWS - 1);
+    if (dx) P.dir = dx;
+    P.walk += dt;
+  }
+  if (P.bubbleT > 0) P.bubbleT -= dt;
+}
+function updateCamera() {
+  const vw = cv.width / zoom, vh = cv.height / zoom, W = COLS * CELL, H = ROWS * CELL;
+  const P = G.player;
+  // если вид больше карты (вертикальный экран), карта встаёт по центру
+  cam.x = Math.round((vw >= W ? (W - vw) / 2 : clamp(P.x * CELL - vw / 2, 0, W - vw)) * zoom) / zoom;
+  cam.y = Math.round((vh >= H ? (H - vh) / 2 : clamp(P.y * CELL - 8 - vh / 2, 0, H - vh)) * zoom) / zoom;
+}
+// пиксели холста (без камеры) → стады мира
+function screenToWorld(sx, sy) { return { x: (sx / zoom + cam.x) / CELL, y: (sy / zoom + cam.y) / CELL }; }
+// пиксели мира → CSS-координаты внутри #stage
+function worldPxToCss(wx, wy) {
+  const r = cv.getBoundingClientRect(), sr = $("stage").getBoundingClientRect(), k = r.width / cv.width;
+  return { left: r.left - sr.left + (wx - cam.x) * zoom * k, top: r.top - sr.top + (wy - cam.y) * zoom * k };
+}
+function drawPlayer() {
+  const P = G.player;
+  const spr = P.dir < 0 ? playerSprL : playerSpr;
+  const bob = P.moving ? Math.floor(P.walk * 8) % 2 : 0;
+  ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.fillRect(Math.round(P.x * CELL - 5), Math.round(P.y * CELL + 1), 10, 2);
+  ctx.drawImage(spr, Math.round(P.x * CELL - 8), Math.round(P.y * CELL - 14 - bob));
+}
+// Ник и облачко рисуются HTML поверх холста, чтобы текст был чётким при любом масштабе
+function updateOverlays() {
+  const P = G.player, tag = $("nameTag"), bub = $("bubble"), log = $("chatLog");
+  const r = cv.getBoundingClientRect(), sr = $("stage").getBoundingClientRect();
+  log.style.left = (r.left - sr.left + 8) + "px"; log.style.bottom = (sr.bottom - r.bottom + 8) + "px";
+  const dp = $("dpad"); dp.style.right = (sr.right - r.right + 8) + "px"; dp.style.bottom = (sr.bottom - r.bottom + 8) + "px";
+  const pos = worldPxToCss(P.x * CELL, P.y * CELL - 15);
+  tag.textContent = PROFILE.nick;
+  tag.style.left = pos.left + "px"; tag.style.top = pos.top + "px"; tag.hidden = false;
+  if (P.bubbleT > 0) {
+    if (bub.textContent !== P.bubble) bub.textContent = P.bubble;
+    bub.style.left = pos.left + "px"; bub.style.top = (pos.top - tag.offsetHeight - 4) + "px";
+    bub.style.opacity = Math.min(1, P.bubbleT / 0.5);
+    bub.hidden = false;
+  } else bub.hidden = true;
+}
+function addChat(nick, text) {
+  const log = $("chatLog"), d = document.createElement("div"), b = document.createElement("b");
+  b.textContent = nick + ": "; d.append(b, document.createTextNode(text)); log.append(d);
+  while (log.children.length > 6) log.firstChild.remove();
+}
+$("chatForm").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const t = $("chatIn").value.trim().replace(/\s+/g, " ");
+  $("chatIn").value = ""; $("chatIn").blur();
+  if (!t || !G) return;
+  addChat(PROFILE.nick, t);
+  G.player.bubble = t; G.player.bubbleT = 6;
+});
+
+// ============================================================ ВВОД В БОЮ
+function toCell(ev) {
+  const r = cv.getBoundingClientRect();
+  mouse.cx = (ev.clientX - r.left) / r.width * cv.width;
+  mouse.cy = (ev.clientY - r.top) / r.height * cv.height;
+  mouse.in = true;
+  syncMouse();
+  return { x: mouse.x, y: mouse.y };
+}
+function syncMouse() { const w = screenToWorld(mouse.cx, mouse.cy); mouse.x = w.x; mouse.y = w.y; }
+cv.addEventListener("pointermove", toCell);
+cv.addEventListener("pointerleave", () => { mouse.in = false; });
+cv.addEventListener("contextmenu", (ev) => { ev.preventDefault(); placing = null; renderBar(); });
+cv.addEventListener("pointerdown", (ev) => {
+  if (!G || G.over || ev.button === 2) return;
+  const c = toCell(ev);
+  if (placing) {
+    if (placeTower(placing, c.x, c.y)) { placing = null; renderBar(); }
+    return;
+  }
+  let hit = null, bd = 4;
+  for (const t of G.towers) { const dd = dist(t.x, t.y - 2.3, c.x, c.y); if (dd < bd) { bd = dd; hit = t; } }
+  selected = hit; updatePanel();
+  // клик по врагу закрепляет подсказку с его именем и HP
+  inspected = hit ? null : enemyAt(c.x, c.y);
+});
+
+const KEYMAP = { KeyW: "up", ArrowUp: "up", KeyS: "down", ArrowDown: "down", KeyA: "left", ArrowLeft: "left", KeyD: "right", ArrowRight: "right" };
+const OVERLAYS = ["scrMode", "mapSelect", "pauseMenu", "endScreen", "cheatMenu", "settingsMenu"];
+const overlayOpen = () => OVERLAYS.some((o) => !$(o).hidden);
+const typing = () => document.activeElement && document.activeElement.tagName === "INPUT";
+const inBattle = () => G && !$("app").hidden && !overlayOpen();
+window.addEventListener("keydown", (ev) => {
+  if (typing()) { if (ev.key === "Escape") document.activeElement.blur(); return; }
+  if (!inBattle()) return;
+  if (KEYMAP[ev.code]) { keys[KEYMAP[ev.code]] = true; ev.preventDefault(); return; }
+  if (ev.key === "Enter") { ev.preventDefault(); $("chatIn").focus(); return; }
+  if (ev.key === "Escape") { placing = null; selected = null; renderBar(); updatePanel(); }
+  const n = parseInt(ev.key, 10);
+  if (n >= 1 && n <= G.loadout.length) togglePlacing(G.loadout[n - 1]);
+  if (ev.key === " ") { ev.preventDefault(); paused = !paused; banner(paused ? "Пауза" : "Продолжаем"); updateHud(); }
+});
+window.addEventListener("keyup", (ev) => { if (KEYMAP[ev.code]) keys[KEYMAP[ev.code]] = false; });
+window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
+document.querySelectorAll("#dpad [data-k]").forEach((b) => {
+  const k = b.dataset.k;
+  b.addEventListener("pointerdown", (ev) => { ev.preventDefault(); keys[k] = true; b.setPointerCapture(ev.pointerId); });
+  for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) b.addEventListener(t, () => { keys[k] = false; });
+});
+
+$("bSkip").onclick = skipWave;
+$("bSpeed").onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; updateHud(); };
+$("bZoom").onclick = () => { zoom = zoom === 2 ? 3 : zoom === 3 ? 1 : 2; updateHud(); };
+$("bMenu").onclick = () => { for (const k in keys) keys[k] = false; $("pauseMenu").hidden = false; };
+$("pResume").onclick = () => { $("pauseMenu").hidden = true; };
+// ============================================================ НАСТРОЙКИ И МУЗЫКА
+// Медиа лежат в папке media/. Музыка играет только в бою, каждый новый бой начинает трек сначала.
+const SETTINGS_KEY = "leviathanSettings";
+const SETTINGS = (() => {
+  const d = { music: 35 }; // громкость музыки, %
+  try { return { ...d, ...(JSON.parse(store(SETTINGS_KEY) || "{}") || {}) }; } catch (e) { return d; }
+})();
+const music = new Audio("media/music.mp3");
+music.loop = true;
+function syncMusic() {
+  music.volume = SETTINGS.music / 100;
+  const want = SETTINGS.music > 0 && G && !$("app").hidden;
+  if (want && music.paused) music.play().catch(() => {});
+  else if (!want && !music.paused) music.pause();
+}
+function openSettings() {
+  for (const k in keys) keys[k] = false;
+  $("setMusic").value = SETTINGS.music; $("setMusicVal").textContent = SETTINGS.music + "%";
+  $("settingsMenu").hidden = false;
+}
+$("setMusic").addEventListener("input", () => {
+  SETTINGS.music = +$("setMusic").value; $("setMusicVal").textContent = SETTINGS.music + "%";
+  store(SETTINGS_KEY, JSON.stringify(SETTINGS)); syncMusic();
+});
+$("setClose").onclick = () => { $("settingsMenu").hidden = true; };
+$("bSettings").onclick = openSettings;
+$("mSettings").onclick = openSettings;
+$("pQuit").onclick = () => { G = null; saveProfile(); show("scrMenu"); };
+$("bAgain").onclick = () => { $("endScreen").hidden = true; newGame(G.mapIndex); };
+$("bToMaps").onclick = () => { G = null; show("scrMenu"); };
+
+function showMaps() {
+  const list = $("mapList");
+  if (!list.children.length) {
+    MAPS.forEach((m, i) => {
+      const p = pathInfo(m.path);
+      const bg = buildBackground(m, p);
+      const b = document.createElement("button"); b.className = "mapcard";
+      const c = document.createElement("canvas"); c.width = COLS * CELL; c.height = ROWS * CELL;
+      const g = c.getContext("2d"); g.imageSmoothingEnabled = false; g.drawImage(bg.canvas, 0, 0);
+      const end = m.path[m.path.length - 1]; drawBase(g, baseX(end) * CELL, end[1] * CELL);
+      const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = m.name;
+      const ds = document.createElement("span"); ds.className = "ds"; ds.textContent = m.desc;
+      b.append(c, nm, ds);
+      b.onclick = () => { $("mapSelect").hidden = true; newGame(i); };
+      list.append(b);
+    });
+  }
+  $("mapSelect").hidden = false;
+}
+
+function enemyAt(x, y) {
+  if (!G) return null;
+  let best = null, bd = 4;
+  for (const e of G.enemies) {
+    const r = e.def.boss ? 6 : 4;
+    const dd = dist(e.x, e.y - (e.def.boss ? 3 : 2), x, y);
+    if (dd < r && dd < bd + (e.def.boss ? 2 : 0)) { bd = dd; best = e; }
+  }
+  return best;
+}
+function updateTip() {
+  const tip = $("tip");
+  if (!G || G.over) { tip.hidden = true; return; }
+  if (inspected && inspected.hp <= 0) inspected = null;
+  const e = inspected || (mouse.in && !placing ? enemyAt(mouse.x, mouse.y) : null);
+  if (!e) { tip.hidden = true; return; }
+  const tags = [e.def.hidden ? "Скрытый" : "", e.def.boss ? "Босс" : "", e.rooted > 0 ? "В лианах" : ""].filter(Boolean).join(" · ");
+  tip.innerHTML = `${e.def.name}<br><span class="hp">♥ ${Math.ceil(e.hp)}/${e.maxHp}</span>${tags ? `<br><span class="tag">${tags}</span>` : ""}`;
+  const pos = worldPxToCss(e.x * CELL, e.y * CELL - SPR[e.type].height - 2);
+  tip.style.left = pos.left + "px"; tip.style.top = pos.top + "px";
+  tip.hidden = false;
+}
+
+// ============================================================ ПРОФИЛЬ ИГРОКА
+// Цена открытия башни в магазине (монеты). Цена установки в бою — levels[0].cost (души).
+const SHOP_PRICE = { recruit: 0, archer: 400, goblin: 650, sword: 850, dryad: 900, spawn: 1300, crypt: 1000, mage: 1300, engineers: 1600 };
+const LOOK_OPTS = [
+  { key: "skin", label: "Кожа", type: "color", vals: ["#f2cba8", "#e8b796", "#c98d6b", "#a8724c", "#7a4e32", "#4e3222"] },
+  { key: "hair", label: "Причёска", type: "name", vals: ["Короткая", "Длинная", "Ёжик", "Хвост", "Лысый"] },
+  { key: "hairColor", label: "Цвет волос", type: "color", vals: ["#2a1c14", "#5a3a22", "#7a4f2c", "#d8b048", "#c8402a", "#e8e8f0", "#4a6ad0", "#c060c0"] },
+  { key: "shirt", label: "Рубашка", type: "color", vals: ["#3b6fb6", "#b04040", "#4f9b45", "#e8c14a", "#7a4fb0", "#e8e0d0", "#2a2a34", "#e07a30"] },
+  { key: "pants", label: "Штаны", type: "color", vals: ["#4a4a5a", "#2a3a6a", "#6b4a2a", "#2a2a2a", "#5a6a4a", "#8a3a3a"] },
+  { key: "hat", label: "Шапка", type: "name", vals: ["Нет", "Кепка", "Капюшон", "Шлем", "Повязка"] },
+];
+const PROFILE_KEY = "leviathanProfile";
+function defaultProfile() {
+  return {
+    nick: "", made: false,
+    look: { skin: 1, hair: 0, hairColor: 2, shirt: 0, pants: 0, hat: 0 },
+    coins: parseInt(store("tdCoins") || "0", 10) || 0, // монеты из прошлой версии игры
+    wins: 0, duelWins: 0, duelLosses: 0,
+    owned: ["recruit"], loadout: ["recruit", null, null, null, null], killed: {},
+  };
+}
+function loadProfile() {
+  const d = defaultProfile();
+  let p = null;
+  try { p = JSON.parse(store(PROFILE_KEY) || "null"); } catch (e) { p = null; }
+  if (!p || typeof p !== "object") return d;
+  const r = { ...d, ...p, look: { ...d.look, ...(p.look || {}) } };
+  r.owned = Array.isArray(p.owned) ? p.owned.filter((id) => TOWERS[id]) : d.owned;
+  if (!r.owned.includes("recruit")) r.owned.unshift("recruit");
+  r.killed = p.killed && typeof p.killed === "object" ? p.killed : {};
+  const lo = Array.isArray(p.loadout) ? p.loadout : d.loadout;
+  r.loadout = [0, 1, 2, 3, 4].map((i) => (r.owned.includes(lo[i]) ? lo[i] : null));
+  if (!r.loadout.some(Boolean)) r.loadout[0] = "recruit";
+  return r;
+}
+function saveProfile() { store(PROFILE_KEY, JSON.stringify(PROFILE)); }
+let PROFILE = loadProfile();
+
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  return "#" + [n >> 16, (n >> 8) & 255, n & 255].map((v) => clamp(Math.round(v * k), 0, 255).toString(16).padStart(2, "0")).join("");
+}
+const lookVal = (look, key) => { const o = LOOK_OPTS.find((q) => q.key === key); return o.vals[(look[key] || 0) % o.vals.length]; };
+function avatarSprite(look) {
+  const skin = lookVal(look, "skin"), hc = lookVal(look, "hairColor"), shirt = lookVal(look, "shirt");
+  const hair = look.hair % 5, hat = look.hat % 5;
+  return sprite(16, 16, (px) => {
+    body(px, { skin, skinShade: shade(skin, 0.85), shirt, shirt2: shade(shirt, 0.72), pants: lookVal(look, "pants") });
+    if (hair === 0) { px(6, 1, hc, 5, 2); px(5, 2, hc, 1, 2); }
+    else if (hair === 1) { px(6, 1, hc, 5, 2); px(5, 2, hc, 1, 7); px(6, 3, hc); }
+    else if (hair === 2) { px(6, 1, hc, 5, 1); px(6, 0, hc); px(8, 0, hc); px(10, 0, hc); px(5, 2, hc); }
+    else if (hair === 3) { px(6, 1, hc, 5, 2); px(5, 2, hc, 1, 2); px(4, 3, hc, 1, 3); px(3, 5, hc, 1, 2); }
+    if (hat === 1) { px(6, 0, "#c84040", 5, 2); px(11, 1, "#8a2a2a", 2, 1); }
+    else if (hat === 2) { const c = shade(shirt, 0.8); px(5, 1, c, 7, 2); px(5, 3, c, 1, 4); px(11, 1, c, 1, 2); }
+    else if (hat === 3) { px(6, 1, "#9aa3b2", 5, 2); px(5, 2, "#6c7484", 1, 3); px(11, 2, "#6c7484", 1, 3); }
+    else if (hat === 4) { px(6, 2, "#e04040", 5, 1); px(5, 3, "#e04040"); px(4, 4, "#e04040"); }
+  });
+}
+let playerSpr = null, playerSprL = null;
+function refreshPlayerSprite() { playerSpr = avatarSprite(PROFILE.look); playerSprL = flipped(playerSpr); }
+function drawAvatarTo(c) { const g = c.getContext("2d"); g.clearRect(0, 0, c.width, c.height); g.drawImage(playerSpr, 0, 0); }
+function towerIcon(id) { const c = document.createElement("canvas"); c.width = 16; c.height = 16; c.getContext("2d").drawImage(SPR[id], 0, 0); return c; }
+function statsHtml() {
+  return [["coin", "◉", "Монеты", PROFILE.coins], ["win", "★", "Победы", PROFILE.wins],
+    ["dw", "⚔", "Победы в дуэлях", PROFILE.duelWins], ["dl", "✕", "Поражения в дуэлях", PROFILE.duelLosses]]
+    .map(([c, i, l, v]) => `<div class="s"><span class="ico ${c}" aria-hidden="true">${i}</span><span>${l}: ${v}</span></div>`).join("");
+}
+
+// ============================================================ ЭКРАНЫ
+const SCREENS = ["app", "scrNick", "scrAvatar", "scrMenu", "scrShop", "scrAlm", "scrAch"];
+function show(id) {
+  for (const s of SCREENS) $(s).hidden = s !== id;
+  for (const o of OVERLAYS) $(o).hidden = true;
+  if (id === "scrMenu") renderMenu();
+  if (id === "app") { $("bCheat").hidden = !PROFILE.cheats; fit(); }
+  syncMusic();
+}
+
+// ник
+function openNick() { $("nickIn").value = PROFILE.nick; $("nickErr").textContent = ""; show("scrNick"); $("nickIn").focus(); }
+$("nickForm").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const n = $("nickIn").value.trim().replace(/\s+/g, " ");
+  if (n.length < 3) { $("nickErr").textContent = "Ник должен быть от 3 до 16 символов"; return; }
+  PROFILE.nick = n; saveProfile();
+  if (PROFILE.made) show("scrMenu"); else openAvatar();
+});
+
+// персонаж
+function openAvatar() { show("scrAvatar"); renderAvatarEditor(); }
+function renderAvatarEditor(focusKey, focusDir) {
+  refreshPlayerSprite();
+  const box = $("avOpts"); box.innerHTML = "";
+  for (const o of LOOK_OPTS) {
+    const i = PROFILE.look[o.key] % o.vals.length, val = o.vals[i];
+    const row = document.createElement("div"); row.className = "opt";
+    row.innerHTML = `<span>${o.label}</span>
+      <button class="pbtn" data-d="-1" aria-label="${o.label}: назад">◀</button>
+      <span class="val">${o.type === "color" ? `<span class="sw" style="background:${val}"></span>${i + 1}/${o.vals.length}` : val}</span>
+      <button class="pbtn" data-d="1" aria-label="${o.label}: вперёд">▶</button>`;
+    row.querySelectorAll("button").forEach((b) => {
+      b.onclick = () => { PROFILE.look[o.key] = (i + +b.dataset.d + o.vals.length) % o.vals.length; renderAvatarEditor(o.key, b.dataset.d); };
+      if (o.key === focusKey && b.dataset.d === focusDir) setTimeout(() => b.focus(), 0);
+    });
+    box.append(row);
+  }
+  drawAvatarTo($("avPreview")); $("avNick").textContent = PROFILE.nick;
+}
+$("avRandom").onclick = () => { for (const o of LOOK_OPTS) PROFILE.look[o.key] = irnd(0, o.vals.length - 1); renderAvatarEditor(); };
+$("avRename").onclick = openNick;
+$("avDone").onclick = () => { PROFILE.made = true; saveProfile(); refreshPlayerSprite(); show("scrMenu"); };
+
+// главное меню
+function renderMenu() { $("menuStats").innerHTML = statsHtml(); $("menuNick").textContent = PROFILE.nick; drawAvatarTo($("menuAvatar")); }
+$("mPlay").onclick = () => { $("scrMode").hidden = false; $("modeSolo").focus(); };
+$("mShop").onclick = () => openShop();
+$("mAch").onclick = () => show("scrAch");
+$("mAvatar").onclick = openAvatar;
+$("achBack").onclick = () => show("scrMenu");
+$("modeBack").onclick = () => { $("scrMode").hidden = true; };
+$("modeSolo").onclick = () => { $("scrMode").hidden = true; showMaps(); };
+$("mapBack").onclick = () => { $("mapSelect").hidden = true; $("scrMode").hidden = false; };
+
+// живой фон меню: зомби бредут по Поляне
+let menuScene = null;
+function drawMenu(dt) {
+  if (!menuScene) {
+    const m = MAPS[0], p = pathInfo(m.path), bg = buildBackground(m, p).canvas, end = m.path[m.path.length - 1];
+    drawBase(bg.getContext("2d"), baseX(end) * CELL, end[1] * CELL);
+    const mobs = ["dead", "fast", "dead", "fat", "ghost", "dead", "fast", "boss1", "dead", "fat"].map((type, i) => ({ type, d: i * 27 }));
+    menuScene = { p, bg, mobs, t: 0 };
+  }
+  const S = menuScene, g = $("menuBg").getContext("2d");
+  S.t += dt;
+  g.imageSmoothingEnabled = false; g.drawImage(S.bg, 0, 0);
+  for (const m of S.mobs) {
+    m.d = (m.d + ENEMIES[m.type].speed * dt) % S.p.total;
+    const q = pointAt(S.p, m.d), spr = SPR[q.dx < 0 ? m.type + "_L" : m.type];
+    if (ENEMIES[m.type].hidden) g.globalAlpha = 0.55;
+    g.drawImage(spr, Math.round(q.x * CELL - spr.width / 2), Math.round(q.y * CELL - spr.height + 3 - (Math.floor(S.t * 6 + m.d) % 2)));
+    g.globalAlpha = 1;
+  }
+}
+
+// магазин
+let shopSel = "recruit";
+const HANGER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M12 7a2 2 0 1 1 2 2c-1 0-2 .6-2 1.6V11L3 17.5V19h18v-1.5L12 11"/></svg>`;
+const LOCK_SVG = `<svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path fill="currentColor" d="M3 5V3.5a3 3 0 0 1 6 0V5h1v6H2V5h1zm1.5 0h3V3.5a1.5 1.5 0 0 0-3 0z"/></svg>`;
+function openShop() { show("scrShop"); renderShop(); }
+function renderShop() {
+  const slots = $("slots"); slots.innerHTML = "";
+  PROFILE.loadout.forEach((id, i) => {
+    const b = document.createElement("button");
+    b.className = "slot" + (id && id === shopSel ? " sel" : "");
+    b.innerHTML = `<span class="n">${i + 1}</span>`;
+    if (id) {
+      const c = document.createElement("span"); c.className = "c"; c.textContent = `◆ ${TOWERS[id].levels[0].cost}`;
+      b.append(towerIcon(id), c); b.setAttribute("aria-label", `Слот ${i + 1}: ${TOWERS[id].name}`);
+      b.onclick = () => { shopSel = id; renderShop(); };
+    } else {
+      b.insertAdjacentHTML("beforeend", `<span class="empty">пусто</span>`); b.setAttribute("aria-label", `Слот ${i + 1}: пусто`);
+    }
+    slots.append(b);
+  });
+  const grid = $("tgrid"); grid.innerHTML = "";
+  for (const id of TOWER_ORDER) {
+    const has = PROFILE.owned.includes(id);
+    const b = document.createElement("button");
+    b.className = "tcell" + (has ? "" : " locked") + (id === shopSel ? " on" : "");
+    b.append(towerIcon(id));
+    if (!has) b.insertAdjacentHTML("beforeend", `<span class="lock">${LOCK_SVG} ${SHOP_PRICE[id]}</span>`);
+    if (PROFILE.loadout.includes(id)) b.insertAdjacentHTML("beforeend", `<span class="eq" title="Экипирована">✓</span>`);
+    const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = TOWERS[id].name; b.append(nm);
+    b.onclick = () => { shopSel = id; renderShop(); };
+    grid.append(b);
+  }
+  renderDetail();
+  $("shopStats").innerHTML = statsHtml();
+}
+function renderDetail() {
+  const id = shopSel, def = TOWERS[id], d = $("detail");
+  const has = PROFILE.owned.includes(id), eq = PROFILE.loadout.indexOf(id), free = PROFILE.loadout.indexOf(null);
+  let act;
+  if (!has) act = `<button class="pbtn gold" id="dAct" ${PROFILE.coins < SHOP_PRICE[id] ? "disabled" : ""}>Купить ◉ ${SHOP_PRICE[id]}</button>`;
+  else if (eq >= 0) act = `<button class="pbtn" id="dAct" ${PROFILE.loadout.filter(Boolean).length <= 1 ? "disabled title=\"Нужна хотя бы одна башня\"" : ""}>Снять</button>`;
+  else act = `<button class="pbtn gold" id="dAct" ${free < 0 ? "disabled" : ""}>${free < 0 ? "Слоты заняты" : "Экипировать"}</button>`;
+  const hid = def.kind === "farm" ? "Не атакует, даёт души" : def.kind === "spawner" ? "Таранит скрытых, но стрелки их не видят"
+    : def.hiddenFrom ? `Видит скрытых с ${def.hiddenFrom} ур.` : "Не видит скрытых";
+  d.innerHTML = `
+    <canvas class="big" width="16" height="16"></canvas>
+    <div class="head"><span class="tname">${def.name}</span><span class="spacer" style="flex:1"></span><span class="price" title="Цена установки в бою">◆ ${def.levels[0].cost}</span></div>
+    <div class="acts">${act}<button class="pbtn hanger" disabled title="Скины в разработке" aria-label="Скины: в разработке">${HANGER_SVG}</button></div>
+    <span class="badge ${def.hiddenFrom ? "yes" : ""}">${hid}</span>
+    <span class="badge ${def.place === "cliff" ? "cliff" : ""}">${def.place === "cliff" ? "Ставится на возвышенность" : "Ставится на землю"}</span>
+    ${def.limit ? `<span class="badge">Не больше ${def.limit} за бой</span>` : ""}
+    <p class="desc">${def.info}</p>`;
+  const big = d.querySelector(".big"); big.getContext("2d").drawImage(SPR[id], 0, 0);
+  if (!has) big.style.filter = "brightness(.35)";
+  $("dAct").onclick = () => {
+    if (!has) {
+      if (PROFILE.coins < SHOP_PRICE[id]) return;
+      PROFILE.coins -= SHOP_PRICE[id]; PROFILE.owned.push(id);
+      if (free >= 0) PROFILE.loadout[free] = id;
+    } else if (eq >= 0) PROFILE.loadout[eq] = null;
+    else if (free >= 0) PROFILE.loadout[free] = id;
+    saveProfile(); renderShop();
+  };
+}
+$("shopBack").onclick = () => show("scrMenu");
+
+// альманах: статы купленных башен и убитых врагов
+let almTab = "towers", almSel = { towers: "recruit", enemies: "dead" };
+function speedLabel(s) {
+  if (s >= 7) return "Экстремально быстрый";
+  if (s >= 5) return "Очень быстрый";
+  if (s >= 4) return "Быстрый";
+  if (s >= 2.5) return "Средняя";
+  if (s >= 1.3) return "Медленный";
+  if (s >= 0.75) return "Очень медленный";
+  return "Крайне медленный";
+}
+function sprIcon(key) { const s = SPR[key], c = document.createElement("canvas"); c.width = s.width; c.height = s.height; c.getContext("2d").drawImage(s, 0, 0); return c; }
+function openAlm() { show("scrAlm"); renderAlm(); }
+function renderAlm() {
+  const isT = almTab === "towers";
+  $("almTabT").classList.toggle("on", isT); $("almTabE").classList.toggle("on", !isT);
+  $("almTabT").setAttribute("aria-selected", isT); $("almTabE").setAttribute("aria-selected", !isT);
+  const ids = isT ? TOWER_ORDER : ENEMY_ORDER;
+  const known = (id) => (isT ? PROFILE.owned.includes(id) : (PROFILE.killed[id] || 0) > 0);
+  const opened = ids.filter(known).length;
+  $("almTitle").textContent = `${isT ? "Башни" : "Враги"}: открыто ${opened} из ${ids.length}`;
+  const grid = $("almGrid"); grid.innerHTML = "";
+  for (const id of ids) {
+    const k = known(id), b = document.createElement("button");
+    b.className = "tcell" + (k ? "" : " locked") + (id === almSel[almTab] ? " on" : "");
+    b.append(sprIcon(id));
+    const nm = document.createElement("span"); nm.className = "nm";
+    nm.textContent = k ? (isT ? TOWERS[id] : ENEMIES[id]).name : "???";
+    b.append(nm);
+    b.onclick = () => { almSel[almTab] = id; renderAlm(); };
+    grid.append(b);
+  }
+  const id = almSel[almTab], d = $("almDetail");
+  if (!known(id)) {
+    d.innerHTML = `<div class="alm-head"><canvas width="16" height="16"></canvas><span class="tname">???</span></div>
+      <p class="desc">${isT ? `Башня ещё не куплена. Открой её в магазине за ◉ ${SHOP_PRICE[id]}, чтобы увидеть статы.` : "Ты ещё не убивал этого врага. Победи его хотя бы раз, чтобы узнать о нём."}</p>`;
+    const c = d.querySelector("canvas"), s = SPR[id]; c.width = s.width; c.height = s.height;
+    c.getContext("2d").drawImage(s, 0, 0); c.style.filter = "brightness(0) opacity(.55)";
+    return;
+  }
+  if (isT) {
+    const def = TOWERS[id], cols = STAT_COLS[def.kind];
+    const head = `<tr><th>Ур.</th><th>Цена ◆</th>${cols.map((c) => `<th>${c[0]}</th>`).join("")}${def.kind === "farm" ? "" : "<th>Скрытые</th>"}</tr>`;
+    const body = def.levels.map((lv, i) => `<tr><td>${i + 1}</td><td>${lv.cost}</td>${cols.map((c) => `<td>${statText(c, lv)}</td>`).join("")}${def.kind === "farm" ? "" : `<td>${hiddenText(def, i + 1)}</td>`}</tr>`).join("");
+    const tags = [def.place === "cliff" ? "На возвышенность" : "На землю", def.limit ? `Не больше ${def.limit} за бой` : "", def.kind === "spawner" ? `Юнит раз в ${def.every} с` : ""].filter(Boolean);
+    d.innerHTML = `<div class="alm-head"><canvas></canvas><div><div class="tname">${def.name}</div><div class="tags">${tags.map((t) => `<span class="badge">${t}</span>`).join("")}</div></div></div>
+      <p class="desc">${def.info}</p>
+      <div class="stbl-wrap"><table class="stbl"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+      <p class="desc small">Цена ур. 1 — установка, дальше — цена улучшения. Продажа возвращает 50% вложенного.</p>`;
+  } else {
+    const e = ENEMIES[id], k = e.rootMult ?? 1;
+    const kv = [["Здоровье", e.hp.toLocaleString("ru-RU")], ["Скорость", `${fmtNum(e.speed)} (${speedLabel(e.speed)})`],
+      ["Скрытый", e.hidden ? "да" : "нет"], ["Лианы Дриады", k === 0 ? "не действуют" : k < 1 ? `держат ${Math.round(k * 100)}% времени` : "действуют"],
+      ["Убито тобой", PROFILE.killed[id]]];
+    d.innerHTML = `<div class="alm-head"><canvas></canvas><div><div class="tname">${e.name}</div><div class="tags">${e.boss ? `<span class="badge cliff">Босс</span>` : ""}${e.hidden ? `<span class="badge yes">Скрытый</span>` : ""}</div></div></div>
+      <div class="kv">${kv.map(([a, b]) => `<span>${a}</span><span>${b}</span>`).join("")}</div>
+      <p class="desc">${e.note}</p>`;
+  }
+  const c = d.querySelector("canvas"), s = SPR[id]; c.width = s.width; c.height = s.height; c.getContext("2d").drawImage(s, 0, 0);
+}
+// 10 нажатий подряд на «Башни» открывают чит-меню; клик в другом месте или пауза больше 2 с сбрасывают счёт
+let cheatTaps = 0, cheatLast = 0;
+$("almTabT").onclick = () => {
+  const now = performance.now();
+  cheatTaps = now - cheatLast < 2000 ? cheatTaps + 1 : 1; cheatLast = now;
+  if (cheatTaps >= 10) { cheatTaps = 0; PROFILE.cheats = true; saveProfile(); openCheats(); }
+  almTab = "towers"; renderAlm();
+};
+document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest("#almTabT")) cheatTaps = 0; }, true);
+function openCheats() { renderCheats(); $("cheatMenu").hidden = false; }
+function renderCheats() {
+  $("chCoins").textContent = PROFILE.coins;
+  const inBattleNow = G && !G.over && !$("app").hidden;
+  $("chSouls").textContent = inBattleNow ? G.souls : "только во время боя";
+  $("cheatMenu").querySelectorAll('[data-cheat="souls"] button, #chSoulsForm button, #chSoulsIn').forEach((b) => { b.disabled = !inBattleNow; });
+  $("bCheat").hidden = !PROFILE.cheats;
+}
+function cheatAdd(kind, v) {
+  v = Math.floor(Number(v));
+  if (!(v > 0)) return;
+  if (kind === "coins") { PROFILE.coins += v; saveProfile(); if (!$("scrMenu").hidden) renderMenu(); if (!$("scrShop").hidden) renderShop(); }
+  else if (G && !G.over) { G.souls += v; updateHud(); renderBar(); updatePanel(); }
+  renderCheats();
+}
+$("cheatMenu").querySelectorAll("[data-cheat] button").forEach((b) => b.onclick = () => cheatAdd(b.parentElement.dataset.cheat, b.dataset.v));
+$("chCoinsForm").addEventListener("submit", (ev) => { ev.preventDefault(); cheatAdd("coins", $("chCoinsIn").value); $("chCoinsIn").value = ""; });
+$("chSoulsForm").addEventListener("submit", (ev) => { ev.preventDefault(); cheatAdd("souls", $("chSoulsIn").value); $("chSoulsIn").value = ""; });
+$("chClose").onclick = () => { $("cheatMenu").hidden = true; };
+$("bCheat").onclick = () => { for (const k in keys) keys[k] = false; openCheats(); };
+$("almTabE").onclick = () => { almTab = "enemies"; renderAlm(); };
+$("almBack").onclick = () => show("scrMenu");
+$("mAlm").onclick = openAlm;
+
+
+
+// ============================================================ МАСШТАБ И ЦИКЛ
+function fit() {
+  if ($("app").hidden) return;
+  const avail = Math.min(document.documentElement.clientWidth - 36, 1100);
+  const other = ["hud", "bar", "help", "chatForm"].reduce((s, id) => s + $(id).offsetHeight, 0) + 50;
+  const availH = Math.max(220, window.innerHeight - other);
+  // на вертикальном экране холст тоже вертикальный: 240 px в ширину, высота по свободному месту
+  const portrait = avail / availH < 1.3;
+  const iw = portrait ? 240 : 480, ih = portrait ? clamp(Math.round(iw * availH / avail), 200, 480) : 288;
+  if (cv.width !== iw || cv.height !== ih) { cv.width = iw; cv.height = ih; ctx.imageSmoothingEnabled = false; }
+  let s = Math.min(avail / iw, availH / ih);
+  if (s >= 1 && !portrait) s = Math.max(1, Math.floor(s * 2) / 2);
+  cv.style.width = Math.floor(cv.width * s) + "px";
+  cv.style.height = Math.floor(cv.height * s) + "px";
+  // вертикальный экран: подрезаем высоту, если страница всё-таки вылезла за экран
+  const over = document.documentElement.scrollHeight - window.innerHeight;
+  if (portrait && over > 0 && !fit.again) { fit.again = true; cv.height = Math.max(200, Math.round(ih - over / s)); cv.style.height = Math.floor(cv.height * s) + "px"; ctx.imageSmoothingEnabled = false; }
+  fit.again = false;
+}
+window.addEventListener("resize", fit);
+
+let lastT = performance.now(), hudTimer = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  if (G && !$("app").hidden) {
+    if (!overlayOpen() && !paused) {
+      const total = dt * speed, steps = Math.ceil(total / (1 / 60));
+      for (let i = 0; i < steps; i++) update(total / steps);
+    }
+    if (!overlayOpen() && !G.over) updatePlayer(dt);
+    updateCamera(); syncMouse();
+    draw(); updateTip(); updateOverlays();
+    hudTimer -= dt;
+    if (hudTimer <= 0) { hudTimer = 0.1; updateHud(); renderBar(); if (selected) refreshUpgradeButton(); }
+  } else if (!$("scrMenu").hidden) drawMenu(dt);
+  requestAnimationFrame(frame);
+}
+function refreshUpgradeButton() {
+  const b = $("pUp"); if (!b || !selected) return;
+  const nx = TOWERS[selected.type].levels[selected.level];
+  b.disabled = !nx || G.souls < nx.cost || selected.bleedT > 0;
+}
+
+buildSprites();
+refreshPlayerSprite();
+if (!PROFILE.nick) openNick();
+else if (!PROFILE.made) openAvatar();
+else show("scrMenu");
+requestAnimationFrame(frame);
+</script>
+
